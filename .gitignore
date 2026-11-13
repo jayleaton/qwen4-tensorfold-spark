@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# local benchmark output
+results/run-*/
+*.log
+*.out
+
+# local config and secrets: copy a profiles/provisional/*.env.example and fill it in
+config/*.env
+profiles/**/*.env
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.netrc
+.git-credentials
+*token*.txt
+secrets/
+
+# private names for scripts/check-public.sh
+.check-public.local
+
+# local agent tooling (skills, settings, memory, worktrees): machine-local, may name lab hosts
+.claude/
+.agents/
+.t3/
+.codex/
+.cursor/
+.aider*
+.opencode/
+AGENTS.local.md
+CLAUDE.local.md
+
+# native build exports
+build/
+zig-out/
+.zig-cache/
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
