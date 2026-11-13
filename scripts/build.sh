@@ -51,8 +51,8 @@ die() { echo "build.sh $P: $*" >&2; exit 1; }
 manifest() { # DIR -> "sha256  ./path" for every regular file, sorted (the form of the committed manifests)
   (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 }
-same_files() { # DIR MANIFEST: DIR holds exactly MANIFEST's files at its sha256s
-  diff <(grep -v '^#' "$2" | grep .) <(manifest "$1") > /dev/null || die "$1 differs from $2"
+same_files() { # DIR MANIFEST: DIR holds exactly MANIFEST's files at its sha256s (in any order: sort order is locale's)
+  diff <(grep -v '^#' "$2" | grep . | LC_ALL=C sort) <(manifest "$1" | LC_ALL=C sort) > /dev/null || die "$1 differs from $2"
 }
 
 step_source() {
@@ -114,7 +114,7 @@ copy_out() { # IMAGE PATH DEST: PATH out of IMAGE (pulled if missing)
 compat_dir() { # IMAGE DEST: the compat driver files and links, exactly as docker/compat pins them
   copy_out "$1" "$COMPAT_PATH" "$2"
   same_files "$2" docker/compat/compat.sha256
-  diff <(grep -v '^#' docker/compat/compat.links) <(cd "$2" && find . -type l -printf '%p -> %l\n' | sort) > /dev/null ||
+  diff <(grep -v '^#' docker/compat/compat.links | LC_ALL=C sort) <(cd "$2" && find . -type l -printf '%p -> %l\n' | LC_ALL=C sort) > /dev/null ||
     die "the links in $1:$COMPAT_PATH differ from docker/compat/compat.links"
   cp docker/compat/tf-compat-entry "$(dirname "$2")/tf-compat-entry"
   chmod 755 "$(dirname "$2")/tf-compat-entry"

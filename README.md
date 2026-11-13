@@ -117,9 +117,9 @@ The script runs three steps; `scripts/build.sh tp1 source|native|image` runs one
      `libtfgrammar`. For TP2 it also carries **Mia's captured Triton kernel set**: her engine replays these compiled
      kernels (`aot.json` and `cubins/`). They are copied byte for byte from her recipe's image (by default her published
      image `ghcr.io/miaai-lab/qwen3.8-flash-dual-dgx-sparks-tensorfold`, by digest; `MIA_IMAGE=` names another) and
-     checked against [`docker/mia-kernels.sha256`](docker/mia-kernels.sha256), the 421 files the measured image
-     carried. Her LICENSE, NOTICE and CREDITS go to `/opt/mia-recipe`. The CUDA 13.3 compat driver comes from the same
-     image.
+     checked against [`docker/mia-kernels.sha256`](docker/mia-kernels.sha256): 421 cubins and `aot.json`, the
+     measured image's kernels (its copy came from her local rebuild and differs only in debug line bytes). Her
+     LICENSE, NOTICE and CREDITS go to `/opt/mia-recipe`. The CUDA 13.3 compat driver comes from the same image.
    - **Runner layer** ([`docker/runner.Dockerfile`](docker/runner.Dockerfile)): clang-18 / lld-18 for the runner's
      frontend, the circuit `calc.tfpc` and the `graph-v7-powmod` bank (release `runner-assets-20261107`, downloaded by
      `scripts/fetch_runner_assets.py` and checked file by file against `config/runner-assets.sha256`). The build fails
