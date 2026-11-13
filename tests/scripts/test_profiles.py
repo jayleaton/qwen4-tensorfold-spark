@@ -140,7 +140,7 @@ def test_flash_next_tp2_candidate_pins_its_engine_and_credits_her_recipe():
     assert all(k in v for k in REQUIRED), [k for k in REQUIRED if k not in v]
     assert v["PROFILE"] == name and v["RANKS"] == "2"
     assert not any(k.startswith("TF_DSV41_") for k in v)
-    for k in ("MODEL_DIR", "PREPARED_DIR", "STATE_DIR", "COST_CACHE_DIR"):
+    for k in ("MODEL_DIR", "PREPARED_DIR", "STATE_DIR", "COST_CACHE_DIR", "CUDA_CACHE_DIR"):
         assert v[k].startswith("<") and name in v[k]
     assert_engine_pin(v, "tp2")
     assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", v["CHECKPOINT"])

@@ -75,9 +75,9 @@ cp profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example \
 ```
 
 The `.env` files are git-ignored. Fill every `<placeholder>`: `MODEL_DIR`, `PREPARED_DIR`, `STATE_DIR`, and for TP2
-also `COST_CACHE_DIR`, `TP_MASTER`, `NCCL_SOCKET_IFNAME` and `NCCL_IB_HCA`. Use absolute paths. Give each checkpoint
-its own prepared, state and cost folders; never reuse another pack's prepared files, calibration or sessions. Leave
-the `TF_COMPUTE_LANE*` and `TF_RUNNER*` lines as they are.
+also `COST_CACHE_DIR`, `CUDA_CACHE_DIR`, `TP_MASTER`, `NCCL_SOCKET_IFNAME` and `NCCL_IB_HCA`, each Spark with its own
+values. Use absolute paths. Give each checkpoint its own prepared, state and cache folders; never reuse another pack's
+prepared files, calibration or sessions. Leave the `TF_COMPUTE_LANE*` and `TF_RUNNER*` lines as they are.
 
 Download the checkpoint at the profile's pinned revision, for example for TP1:
 
@@ -158,7 +158,7 @@ On each Spark, with that Spark's own filled-in `.env`, make the engine env file 
 ```sh
 source profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env
 grep -E '^(TF_|TENSORFOLD_|HF_HUB_OFFLINE=)' profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env > tf.env
-mkdir -p "$COST_CACHE_DIR" "$CUDA_CACHE_DIR"    # CUDA_CACHE_DIR: any folder of yours, for the driver's kernel cache
+mkdir -p "$COST_CACHE_DIR" "$CUDA_CACHE_DIR"
 ```
 
 Start rank 1 on the second Spark first:
@@ -166,13 +166,14 @@ Start rank 1 on the second Spark first:
 ```sh
 docker run -d --name qwen38fn-r1 --gpus all --ipc=host --network host \
   --device /dev/infiniband --cap-add IPC_LOCK --ulimit memlock=-1 \
-  -e NCCL_SOCKET_IFNAME=<LINK_IFACE> -e NCCL_IB_HCA=<RAIL0_DEV>,<RAIL1_DEV> \
-  -e NCCL_IB_GID_INDEX=3 -e NCCL_MIN_NCHANNELS=4 -e NCCL_MAX_NCHANNELS=4 \
+  -e NCCL_SOCKET_IFNAME="$NCCL_SOCKET_IFNAME" -e NCCL_IB_HCA="$NCCL_IB_HCA" \
+  -e NCCL_IB_GID_INDEX="$NCCL_IB_GID_INDEX" -e NCCL_MIN_NCHANNELS="$NCCL_MIN_NCHANNELS" \
+  -e NCCL_MAX_NCHANNELS="$NCCL_MAX_NCHANNELS" \
   --env-file tf.env -v "$MODEL_DIR":/model:ro -v "$CUDA_CACHE_DIR":/cache \
   -v "$COST_CACHE_DIR":/root/.cache/tensorfold \
-  qwen4-tensorfold:tp2 serve /model --name Qwen3.8-Flash-Next --host 127.0.0.1 --port 8000 \
+  "$IMAGE" serve /model --name Qwen3.8-Flash-Next --host 127.0.0.1 --port 8000 \
   --context 1048576 --parallel 16 --max-tokens 32768 --thinking --thinking-budget 8192 --kv-cache fp8 \
-  --tp 2 --rank 1 --master <RANK0_LINK_IP> --master-port 29551
+  --tp 2 --rank 1 --master "$TP_MASTER" --master-port "$TP_MASTER_PORT"
 ```
 
 Then rank 0 on the first Spark, which serves on port 8000:
@@ -180,18 +181,19 @@ Then rank 0 on the first Spark, which serves on port 8000:
 ```sh
 docker run -d --name qwen38fn-r0 --gpus all --ipc=host --network host \
   --device /dev/infiniband --cap-add IPC_LOCK --ulimit memlock=-1 \
-  -e NCCL_SOCKET_IFNAME=<LINK_IFACE> -e NCCL_IB_HCA=<RAIL0_DEV>,<RAIL1_DEV> \
-  -e NCCL_IB_GID_INDEX=3 -e NCCL_MIN_NCHANNELS=4 -e NCCL_MAX_NCHANNELS=4 \
+  -e NCCL_SOCKET_IFNAME="$NCCL_SOCKET_IFNAME" -e NCCL_IB_HCA="$NCCL_IB_HCA" \
+  -e NCCL_IB_GID_INDEX="$NCCL_IB_GID_INDEX" -e NCCL_MIN_NCHANNELS="$NCCL_MIN_NCHANNELS" \
+  -e NCCL_MAX_NCHANNELS="$NCCL_MAX_NCHANNELS" \
   --env-file tf.env -v "$MODEL_DIR":/model:ro -v "$CUDA_CACHE_DIR":/cache \
   -v "$COST_CACHE_DIR":/root/.cache/tensorfold \
-  qwen4-tensorfold:tp2 serve /model --name Qwen3.8-Flash-Next --host 127.0.0.1 --port 8000 \
+  "$IMAGE" serve /model --name Qwen3.8-Flash-Next --host 127.0.0.1 --port 8000 \
   --context 1048576 --parallel 16 --max-tokens 32768 --thinking --thinking-budget 8192 --kv-cache fp8 \
-  --tp 2 --rank 0 --master <RANK0_LINK_IP> --master-port 29551
+  --tp 2 --rank 0 --master "$TP_MASTER" --master-port "$TP_MASTER_PORT"
 ```
 
-`<LINK_IFACE>` is that Spark's link interface (`NCCL_SOCKET_IFNAME`), `<RAIL0_DEV>,<RAIL1_DEV>` its two RoCE rail
-devices (`NCCL_IB_HCA`), and `<RANK0_LINK_IP>` the first Spark's address on the link (`TP_MASTER`), the same on both.
-The serve flags are the profile's `SERVE_ARGS`. A rank with no kept lane-cost table in `COST_CACHE_DIR` times it
+Each line reads that Spark's own `.env`: `NCCL_SOCKET_IFNAME` is its link interface, `NCCL_IB_HCA` its two RoCE rail
+devices, and `TP_MASTER` the first Spark's address on the link (the same on both). The serve flags are the profile's
+`SERVE_ARGS`. A rank with no kept lane-cost table in `COST_CACHE_DIR` times it
 (about 40 s) and writes it; the boot log says `lanes costs (kept)` or `(measured)`. Delete the folder to time them
 again. Startup (rank 1 launch to rank 0 ready) measured 69 s with the costs kept and 111 s without (on an
 earlier pin, `4c4e966eb`). Follow it with
