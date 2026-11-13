@@ -16,17 +16,12 @@ calls on that runner. The Qwen4 profiles are placeholders: no Qwen4 checkpoint h
 
 | Profile | Checkpoint (pack) | Context | Sparks | Engine family | What is on |
 | --- | --- | --- | --- | --- | --- |
-| [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) **(experimental)** | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit g32 with MTP | 65,536 | 1 | `flashnext` | compute lane and its server-side default, in-model runner, lane on the runner, CUDA 13.3 compat driver |
+| [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit g32 with MTP | 65,536 | 1 | `flashnext` | compute lane and its server-side default, in-model runner, lane on the runner, CUDA 13.3 compat driver, an 8192-token default thinking budget, marked inline values |
 | [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4 | 1,048,576 | 2 (TP=2, RoCE) | `flashnext`, Mia's engine (`TF_FLASHNEXT_ENGINE=mia`) | the same, plus her serve settings, an 8192-token default thinking budget, marked inline values |
 | [qwen38-flash-next-tp1](profiles/provisional/qwen38-flash-next-tp1.env.example) | the TP1 pack | 65,536 | 1 | upstream `flashnext` | nothing: the plain boot plus two prefill chunk settings (the control) |
 
 Pick TP1 if you have one Spark, TP2 if you have two linked Sparks. The control exists to compare against; it is not a
 serving recommendation. Each profile pins its checkpoint revision in `CHECKPOINT` (`repo@revision`).
-
-**TP1 tool-full is experimental.** It has a known digit runaway on long exact powers (see
-[Known limits](#known-limits)), and its engine commit is not public yet. The plain `qwen38-flash-next-tp1` control is
-not affected: it sets no `TF_RUNNER` key, so the engine starts no in-model runner and never writes a value into a
-reply.
 
 ## Prerequisites
 
@@ -48,9 +43,9 @@ reply.
 
 ## Quickstart
 
-The engine is the public fork https://github.com/jayleaton/TensorFold, branch `flashnext-mia-lanes`. The exact repo
-and commit each profile was measured on are its `ENGINE_REPO` and `ENGINE_REV`; build from those. The TP1 tool-full
-profile's engine commit is not public yet.
+The engine is the public fork https://github.com/jayleaton/TensorFold: branch `flashnext-tp1-lanes` for TP1 and
+`flashnext-mia-lanes` for TP2 (the TP1 branch is the TP2 one plus three runner commits). The exact repo and commit
+each profile was measured on are its `ENGINE_REPO` and `ENGINE_REV`; build from those.
 
 ### 1. Make the env file
 
@@ -95,9 +90,17 @@ Set `IMAGE` to the final tag. On TP2 both Sparks need the same image.
 
 ### 3. Serve on one Spark (TP1)
 
-The profile gives the engine environment (the `TF_*` keys) and the host folders. *The full `docker run` line (GPU
-flags, mount points inside the container, the engine's serve command) is not documented in this repo yet.* The server
-listens on `HOST:PORT` (default `localhost:8000`).
+The profile gives the engine environment (the `TF_*` keys), the host folders and `SERVE_ARGS`. The measured boot
+passed only the `TF_*` keys to the container and mounted the checkpoint read-only:
+
+```sh
+grep '^TF_' profiles/provisional/qwen38-flash-next-tp1-tool-full.env > tf.env
+docker run -d --init --gpus all --ipc=host --network host --ulimit memlock=-1 --env-file tf.env \
+  -v "$MODEL_DIR":/model:ro "$IMAGE" \
+  serve /model --host 127.0.0.1 --port 8000 --context 65536 --thinking-budget 8192
+```
+
+The server listens on `HOST:PORT` (default `localhost:8000`).
 
 ### 4. Serve on two Sparks (TP2)
 
@@ -157,7 +160,11 @@ at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decod
 | 2026-11-11 | `c8e930375` | computation-heavy subset 93/120 at 908 tokens a task (control 50/120 at 6,605); thinking-off set 18/20 |
 | 2026-11-11 | `c8e930375` + compat | compat driver against host driver: speed score +5.5%; the same tokens on 116 paired requests, compat faster on all 116 |
 | 2026-11-11 | `1a7ed13bb` | computation-heavy subset 93/120, 120/120 replies identical; thinking-off set 0 runner cells, 18/20 |
-| 2026-11-12 | `501674d7f` (pinned) | tool calls cut by `max_tokens` inside a value: 12/12 end cleanly; agent cells 40/40 token-identical to `1a7ed13bb`; check subset 68/72; thinking-off 18/20. The computation-heavy subset was not run on this commit. |
+| 2026-11-12 | `501674d7f` | tool calls cut by `max_tokens` inside a value: 12/12 end cleanly; agent cells 40/40 token-identical to `1a7ed13bb`; check subset 68/72; thinking-off 18/20. The computation-heavy subset was not run on this commit. |
+| 2026-11-13 | `b62876185` (= the pinned public twin `9b1a0c175`) | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with 0 digit runaways |
+| 2026-11-13 | `b62876185` | computation-heavy subset 95/120 at 900 tokens a task |
+| 2026-11-13 | `b62876185` | lane categories 179/180; check subset 68/72; thinking-off set 18/20, all 20 replies identical to `501674d7f`'s |
+| 2026-11-13 | `b62876185` | a 12-prompt thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass |
 
 Decode on `c8e930375`: 48.8 / 47.8 / 53.8 tokens/s at 841 / 6k / 24k-token prompts, 85.1 with 4 at once. With the
 compat driver: 53.6 / 49.5 / 55.3, 93.6 with 4 at once. Single cells move several percent between boots.
@@ -168,39 +175,25 @@ The full measurement notes, with every arm, are the comment blocks in each profi
 
 - **Text only on TP2.** Mia's patch 0009 (Python vision) is not ported. The TP2 port refuses `--vision`; her vision
   settings stay in the profile as measured.
-- **TP1 tool-full: digit runaway on long powers (experimental).** When the runner writes a long exact integer into the
-  reasoning (the measured cases are powers of 144 to 188 digits), Qwen can carry on with long runs of invented digits.
-  A run can be hundreds or a thousand digits, a reply can grow several times longer or end at `max_tokens` with no
-  answer, and the answer can be missing or wrong. Experimental means this profile is for trying the lanes, not for
-  workloads with long exact integers, and its pin and settings may change. The pinned `501674d7f` has neither the
-  digit stop nor the inline-value mark, and the long-integer set was not run on it. On 2026-11-13 three newer engines
-  were tried on TP1, with the mark on, against that set (7^222; 3^300 and 2^500; 13^150; three seeds each):
-  - the TP2 engine (`d306dc2fe`): 8/9, one reply with three runs capped at 1,024 digits;
-  - the same plus a holding stop: 8/9, one run of 1,024 digits;
-  - the same plus a stop after the mark: 9/9 with no run past an exact value, but one reply ended at `max_tokens`
-    with no answer and two others grew about 5x and 6x longer.
-
-  None of them is adopted; the fix is open. The plain `qwen38-flash-next-tp1` control runs no runner and is not
-  affected.
-- **Inline-value mark not final.** TP2 sets `TF_RUNNER_INLINE_MARK=1`: an engine-owned inline value ends in
-  ` @engine`. Without it Qwen extended spliced big integers with invented digits and once overrode the engine's right
-  value. The default is still under decision. TP1 tool-full runs with it off.
+- **TP1 tool-full: long exact integers.** The 4-bit TP1 model opens its reasoning by quoting the request. When the
+  request itself held `7^222 =`, the runner used to write the exact value into that quotation; the model then took the
+  value for the user's text and could run on into long invented digit runs. The pinned engine abstains on an inline
+  expression inside an open quotation (`TF_RUNNER_INLINE_QUOTED`, on by default), and the long-integer set passes 9/9
+  with 0 runaways. The digit stop after an owned value and the 1,024-digit reasoning run cap are on, but no stop fired
+  in the release window, so neither was exercised there. A run the model writes with no engine value before it has no
+  engine-side stop.
+- **Inline-value mark not final.** Both tool-full profiles set `TF_RUNNER_INLINE_MARK=1`: an engine-owned inline value
+  ends in ` @engine`. Without it Qwen extended spliced big integers with invented digits and once overrode the engine's
+  right value. The model sometimes glues a word to the mark (`@engineer`) in its reasoning; TP1 leaves that alone
+  (`TF_RUNNER_MARK_STOP=0`) because cutting it cost a right answer. The default is still under decision.
 - **Runner in thinking chats only.** A thinking-off chat gets no runner session and no engine-owned values. The compute
   lane also stays out of `tool_choice` required or named calls and of requests with `max_tokens` under 1024.
-- **Thinking budget.** TP2 closes a think block after 8192 tokens unless the request sets `thinking_budget`.
+- **Thinking budget.** Both tool-full profiles close a think block after 8192 tokens unless the request sets
+  `thinking_budget`.
 - **Not rerun on every pin.** Each profile's notes say which checks ran on which commit.
 - **Heat.** Some 16-stream waves reached 92-95 C and clocks were capped; those runs are marked or excluded in the notes.
-- **One pair of nodes.** Treat differences of a few percent as indicative.
-
-### Still needed before TP1 tool-full is public
-
-1. **A public engine commit.** `501674d7f` is in a private repository, and two merge messages and several commit
-   messages there name private branches, internal commits and people. A public twin is prepared but not published: the
-   same 26 commits on public upstream TensorFold `main`, the same merges, authors and dates, those messages reworded
-   and 5 comment lines reworded (credits, a host name). The profile's `ENGINE_REPO` and `ENGINE_REV` move to it once
-   it is pushed.
-2. **The digit runaway fixed**, or this profile kept marked experimental (above).
-3. **The serve and image commands** for TP1 written down (see Quickstart).
+- **One pair of nodes, one window per arm.** Treat differences of a few percent, or of one or two items, as
+  indicative.
 
 ## Qwen4 placeholders: NOT YET WORKING
 

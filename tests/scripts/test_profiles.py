@@ -84,8 +84,7 @@ def test_flash_next_candidate_pins_its_engine_and_runs_compute_in_engine():
     for k in ("MODEL_DIR", "PREPARED_DIR", "STATE_DIR"):
         assert v[k].startswith("<") and name in v[k]
     assert re.fullmatch(r"[0-9a-f]{40}", v["ENGINE_REV"]) and v["ENGINE_REV"][:12] in v["IMAGE"]
-    # TP1's engine line has no public twin yet, so its repo may differ from config/tensorfold.repo until it gets one
-    assert re.fullmatch(r"https://github\.com/jayleaton/[\w.-]+\.git", v["ENGINE_REPO"])
+    assert v["ENGINE_REPO"] == (ROOT / "config/tensorfold.repo").read_text().strip()
     for k in ("CHECKPOINT", "QUANT_FORMAT", "CONTEXT", "TF_FLASHNEXT_CHUNK", "TF_FLASHNEXT_CHUNK_SOLO"):
         assert v[k] == control[k], k
     # compute runs in the engine for every request: the lane, its server-side default, the runner and S3 all on
