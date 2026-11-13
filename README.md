@@ -4,89 +4,136 @@ Support me here: https://buymeacoffee.com/jayleaton
 
 # Qwen3.8-Flash-Next (and later Qwen4) on TensorFold, NVIDIA DGX Spark
 
-Serving profiles (env files) for the native TensorFold engine on one or two NVIDIA DGX Sparks. The working profiles
-serve Qwen3.8-Flash-Next, the released preview of the Qwen4 architecture, with the engine's compute lane (the engine
-runs exact computation for every thinking chat), the in-model runner on an exact circuit and graph bank, and the lane's
+**This repo is the recipe (profiles, patches, build script and docs), not the engine.** The engine is
+[TensorFold](https://github.com/ashhart/TensorFold), written in Zig: the pinned, unmodified submodule
+`vendor/TensorFold` plus the 79 patches in [`patches/`](patches), applied when you build the image. The Python files
+here are only this repo's own checks.
+
+The profiles serve Qwen3.8-Flash-Next, the released preview of the Qwen4 architecture, with the engine's compute lane
+(exact computation in every thinking chat), the in-model runner on an exact circuit and graph bank, and the lane's
 calls on that runner. The Qwen4 profiles are placeholders: no Qwen4 checkpoint has been published.
 
-> **Work in progress.** Every profile is under `profiles/provisional/`. Results come from one Spark or one pair of
-> Sparks, one boot per arm. No number here carries over to a Qwen4 size.
+## Start here
 
-## Which profile
+| You have | Profile | Patches | Checkpoint |
+| --- | --- | --- | --- |
+| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0079) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
+| **two linked Sparks** | **TP2**: [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `patches/series.tp2` (0001-0076) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4, 1,048,576 context |
 
-| Profile | Checkpoint (pack) | Context | Sparks | Engine family | What is on |
-| --- | --- | --- | --- | --- | --- |
-| [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit g32 with MTP | 65,536 | 1 | `flashnext` | compute lane and its server-side default, in-model runner, lane on the runner, CUDA 13.3 compat driver, an 8192-token default thinking budget, marked inline values |
-| [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4 | 1,048,576 | 2 (TP=2, RoCE) | `flashnext`, Mia's engine (`TF_FLASHNEXT_ENGINE=mia`) | the same, plus her serve settings, an 8192-token default thinking budget, marked inline values |
-| [qwen38-flash-next-tp1](profiles/provisional/qwen38-flash-next-tp1.env.example) | the TP1 pack | 65,536 | 1 | upstream `flashnext` | nothing: the plain boot plus two prefill chunk settings (the control) |
+Then follow the steps below: [build the image](#2-build-the-image), [serve on one Spark](#3-serve-on-one-spark-tp1)
+or [on two](#4-serve-on-two-sparks-tp2), and [check it answers](#5-check-it-answers).
 
-Pick TP1 if you have one Spark, TP2 if you have two linked Sparks. The control exists to compare against; it is not a
-serving recommendation. Each profile pins its checkpoint revision in `CHECKPOINT` (`repo@revision`).
+TP2 runs Mia's (MiaAI-Lab's) Flash-Next engine, forward-ported onto this base and selected with
+`TF_FLASHNEXT_ENGINE=mia`. TP1 runs TensorFold's own `flashnext` family. Both carry the same compute lane and runner.
+The control profile [qwen38-flash-next-tp1](profiles/provisional/qwen38-flash-next-tp1.env.example) is the plain TP1
+boot with no lane or runner. It is there to compare against, not to serve. Each profile pins its checkpoint revision
+in `CHECKPOINT` (`repo@revision`).
+
+## The engine: upstream TensorFold plus patches
+
+| | |
+| --- | --- |
+| Upstream | [`ashhart/TensorFold`](https://github.com/ashhart/TensorFold) at `f212eeabde0fc2ac3234ca947a69cc7714abaca2` (the `vendor/TensorFold` submodule, `config/tensorfold.rev`), unmodified |
+| `patches/0001`-`0076` | the TP2 engine: Mia's dual-Spark Flash-Next engine as `flashnext_mia` (0002-0012: her own commits, authored MiaAI-Lab), then the compute lane, the in-model runner and its frontend, the call gates, `tool_choice`, the thinking-budget fixes, lane cost keeping and the runner's digit stop |
+| `patches/0077`-`0079` | three runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, and the quoted rule (no engine value inside an open quotation) |
+| `patches/series.tp1`, `series.tp2` | which patches each profile applies, in order, and the tree sha the result must have |
+
+The patches are a `git format-patch` series; each keeps its original author. Applied with `git am`, `series.tp2` gives
+exactly the tree the TP2 measurements ran (`d306dc2fe26e`), and `series.tp1` the tree the TP1 measurements ran
+(`b62876185195`). `scripts/build.sh` refuses to go on if the tree differs.
 
 ## Prerequisites
 
-- **Hardware:** NVIDIA DGX Spark (GB10). The TP2 profile loads kernels for `sm121`. TP2 needs two Sparks.
+- **Hardware:** NVIDIA DGX Spark (GB10). The engine is built for `sm_121`. TP2 needs two Sparks.
 - **Link (TP2 only):** a RoCE link between the two Sparks. The profile uses both RoCE rails (`NCCL_IB_HCA`), GID
   index 3 on both nodes and 4 NCCL channels. You need each node's link interface name, both rail device names and
   rank 0's address on the link.
 - **Docker** with GPU access through the NVIDIA container runtime, on each Spark.
-- **Driver:** the profiles were measured with the host's 580 kernel module. The tool-full images carry the CUDA 13.3
-  user-mode driver (libcuda 610.43.02, taken from Mia's NGC-based image) and use it only while the kernel module is
-  older than 610 and `cuInit` succeeds through it; otherwise the host driver. `TF_CUDA_COMPAT=0` forces the host
-  driver. Each rank logs which one it uses.
+- **To build:** on a Spark, the CUDA toolkit (`nvcc` with `sm_121`, as DGX OS ships it), [Zig
+  0.17.0](https://ziglang.org/download/) (the engine's pinned version), git, python3 and Docker. The build needs no
+  GPU. The native compile needs about 5 GiB of memory at `JOBS=1`.
+- **Driver:** the profiles were measured with the host's 580 kernel module. The images carry the CUDA 13.3 user-mode
+  driver (libcuda 610.43.02, taken from Mia's NGC-based image) and use it only while the kernel module is older than
+  610 and `cuInit` succeeds through it; otherwise the host driver. `TF_CUDA_COMPAT=0` forces the host driver. Each
+  rank logs which one it uses.
 - **Checkpoint:** download the exact `CHECKPOINT` revision from Hugging Face into `MODEL_DIR` (on both Sparks for
   TP2). The profiles set `HF_HUB_OFFLINE=1`.
-- **Disk:** no disk figure has been measured for these profiles. Budget for the checkpoint, its own prepared folder,
-  state folder and the runner images.
-- **Toolchain to build images:** the engine repository's pinned Zig and Docker. The runner layers need
-  no GPU to build.
+- **Disk:** no disk figure has been measured for these profiles. Budget for the checkpoint, the TensorFold checkout,
+  the build tree, the base images the build copies from (TP2: Mia's image), and the finished image.
 
 ## Quickstart
 
-The engine is the public fork https://github.com/jayleaton/TensorFold: branch `flashnext-tp1-lanes` for TP1 and
-`flashnext-mia-lanes` for TP2 (the TP1 branch is the TP2 one plus three runner commits). The exact repo and commit
-each profile was measured on are its `ENGINE_REPO` and `ENGINE_REV`; build from those.
-
-### 1. Make the env file
+### 1. Clone and make the env file
 
 ```sh
+git clone https://github.com/jayleaton/qwen4-tensorfold-spark
+cd qwen4-tensorfold-spark
 cp profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example \
    profiles/provisional/qwen38-flash-next-tp1-tool-full.env        # TP1
 cp profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example \
    profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env    # TP2, on both Sparks
 ```
 
-The `.env` files are git-ignored. Fill every `<placeholder>`: `IMAGE`, `MODEL_DIR`, `PREPARED_DIR`, `STATE_DIR`, and
-for TP2 also `COST_CACHE_DIR`, `TP_MASTER`, `NCCL_SOCKET_IFNAME` and `NCCL_IB_HCA`. Use absolute paths. Give each
-checkpoint its own prepared, state and cost folders; never reuse another pack's prepared files, calibration or
-sessions. Leave the `TF_COMPUTE_LANE*` and `TF_RUNNER*` lines as they are.
+The `.env` files are git-ignored. Fill every `<placeholder>`: `MODEL_DIR`, `PREPARED_DIR`, `STATE_DIR`, and for TP2
+also `COST_CACHE_DIR`, `TP_MASTER`, `NCCL_SOCKET_IFNAME` and `NCCL_IB_HCA`. Use absolute paths. Give each checkpoint
+its own prepared, state and cost folders; never reuse another pack's prepared files, calibration or sessions. Leave
+the `TF_COMPUTE_LANE*` and `TF_RUNNER*` lines as they are.
 
-### 2. Build the runner image
+Download the checkpoint at the profile's pinned revision, for example for TP1:
 
-At `ENGINE_REV`, the image is built in layers:
+```sh
+hf download TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP \
+  --revision 2b170fa6309d5d1ee380b35636075fac7945f286 --local-dir "$MODEL_DIR"
+```
 
-1. **Native serving image** (`tensorfold-native`). For TP2 it is built for the Spark's own CPU (no `-Dtarget` or
-   `-Dcpu`) and carries Mia's captured Triton kernel set, copied byte for byte from her recipe's image. *The build
-   command for this image is not documented in this repo.*
-2. **Runner frontend layer**, from the engine's `packaging/runner/README.md`:
+### 2. Build the image
+
+On a Spark (for TP2 build on one and copy the image to the other, or build on both):
+
+```sh
+scripts/build.sh tp1     # or: scripts/build.sh tp2
+```
+
+The script runs three steps; `scripts/build.sh tp1 source|native|image` runs one.
+
+1. **source:** `git submodule update --init vendor/TensorFold`, a clean copy of it at the pinned commit in
+   `build/PROFILE/src`, and every patch in `patches/series.PROFILE` applied with `git am`. It checks that the resulting
+   tree is the measured one.
+2. **native:** in that tree, with Zig 0.17.0 and no `-Dtarget` / `-Dcpu` (host code for the Spark's own CPU, as the
+   measured images were built):
 
    ```sh
-   zig build runner-frontend-check
-   packaging/runner/build.sh BASE_IMAGE TAG zig-out/bin/tf-runner-frontend-check
-   packaging/runner/check-image.sh TAG
+   zig build check-native-cuda-host -j1 -Dnvcc=/usr/local/cuda/bin/nvcc -Dsm=121
+   zig build native -j1 -Dnvcc=/usr/local/cuda/bin/nvcc -Dsm=121 -Doptimize=ReleaseFast -Dstrip=true --prefix build/PROFILE/out
+   zig build runner-frontend-check -j1 --prefix build/PROFILE/out
+   zig build grammar -j1 -Dxgrammar=build/xgrammar --prefix build/PROFILE/grammar
    ```
 
-3. **Runner assets layer** (the circuit `calc.tfpc` and the `graph-v7-powmod` bank, from the `runner-assets-20261107`
-   release, checked against `assets.sha256`):
+   `build/xgrammar` is [xgrammar](https://github.com/mlc-ai/xgrammar) v0.2.8 (`97787376`) with its submodules, cloned
+   if missing.
+3. **image:** the Docker layers in [`docker/`](docker), with no compile in Docker:
+   - **Serving base** ([`docker/tp1.Dockerfile`](docker/tp1.Dockerfile) / [`docker/tp2.Dockerfile`](docker/tp2.Dockerfile)):
+     NVIDIA's CUDA 13.0.1 base, NCCL, ibverbs, python3 (the compute lane's interpreter), `tensorfold-native` and
+     `libtfgrammar`. For TP2 it also carries **Mia's captured Triton kernel set**: her engine replays these compiled
+     kernels (`aot.json` and `cubins/`). They are copied byte for byte from her recipe's image (by default her published
+     image `ghcr.io/miaai-lab/qwen3.8-flash-dual-dgx-sparks-tensorfold`, by digest; `MIA_IMAGE=` names another) and
+     checked against [`docker/mia-kernels.sha256`](docker/mia-kernels.sha256), the 421 files the measured image
+     carried. Her LICENSE, NOTICE and CREDITS go to `/opt/mia-recipe`. The CUDA 13.3 compat driver comes from the same
+     image.
+   - **Runner layer** ([`docker/runner.Dockerfile`](docker/runner.Dockerfile)): clang-18 / lld-18 for the runner's
+     frontend, the circuit `calc.tfpc` and the `graph-v7-powmod` bank (release `runner-assets-20261107`, downloaded by
+     `scripts/fetch_runner_assets.py` and checked file by file against `config/runner-assets.sha256`). The build fails
+     unless `tf-runner-frontend-check --require` computes the engine's probe cells.
+   - **CUDA forward-compatibility layer** (TP1, [`docker/compat/`](docker/compat)): the driver files in
+     `/opt/tensorfold/compat`, checked against `compat.sha256` and `compat.links`, and the entrypoint `tf-compat-entry`.
+     The files come from `COMPAT_IMAGE` (default NVIDIA's PyTorch 26.07 container by digest, the base of Mia's image).
 
-   ```sh
-   packaging/runner/build-assets.sh RUNNER_IMAGE TAG [ASSETS_DIR]
-   ```
+The finished image is `qwen4-tensorfold:tp1` or `qwen4-tensorfold:tp2`, the profile's `IMAGE`. On TP2 both Sparks
+need the same image:
 
-4. **CUDA forward-compatibility layer** (driver files in `/opt/tensorfold/compat`, entrypoint `tf-compat-entry`).
-   *The build command for this layer is not documented in this repo.*
-
-Set `IMAGE` to the final tag. On TP2 both Sparks need the same image.
+```sh
+docker save qwen4-tensorfold:tp2 | ssh <second-spark> docker load
+```
 
 ### 3. Serve on one Spark (TP1)
 
@@ -94,30 +141,86 @@ The profile gives the engine environment (the `TF_*` keys), the host folders and
 passed only the `TF_*` keys to the container and mounted the checkpoint read-only:
 
 ```sh
+source profiles/provisional/qwen38-flash-next-tp1-tool-full.env
 grep '^TF_' profiles/provisional/qwen38-flash-next-tp1-tool-full.env > tf.env
-docker run -d --init --gpus all --ipc=host --network host --ulimit memlock=-1 --env-file tf.env \
+docker run -d --name qwen38fn --init --gpus all --ipc=host --network host --ulimit memlock=-1 --env-file tf.env \
   -v "$MODEL_DIR":/model:ro "$IMAGE" \
   serve /model --host 127.0.0.1 --port 8000 --context 65536 --thinking-budget 8192
 ```
 
-The server listens on `HOST:PORT` (default `localhost:8000`).
+The server listens on `127.0.0.1:8000`.
 
 ### 4. Serve on two Sparks (TP2)
 
-Start rank 1 on the second Spark first, then rank 0. Both ranks use the profile's `SERVE_ARGS` plus the TP flags:
+On each Spark, with that Spark's own filled-in `.env`, make the engine env file (the profile's `TF_*`,
+`TENSORFOLD_*` and `HF_HUB_OFFLINE` keys, as the measured boots passed them):
 
 ```sh
-# rank 1, second Spark, first
-<engine serve command> $SERVE_ARGS --tp 2 --rank 1 --master $TP_MASTER --master-port $TP_MASTER_PORT
-# rank 0, first Spark, then (serves on PORT)
-<engine serve command> $SERVE_ARGS --tp 2 --rank 0 --master $TP_MASTER --master-port $TP_MASTER_PORT
+source profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env
+grep -E '^(TF_|TENSORFOLD_|HF_HUB_OFFLINE=)' profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env > tf.env
+mkdir -p "$COST_CACHE_DIR" "$CUDA_CACHE_DIR"    # CUDA_CACHE_DIR: any folder of yours, for the driver's kernel cache
 ```
 
-`SERVE_ARGS` is `--context 1048576 --parallel 16 --max-tokens 32768 --thinking --thinking-budget 8192 --kv-cache fp8`.
-Mount `COST_CACHE_DIR` at `~/.cache/tensorfold` inside each rank's container (the image runs as root). A rank with no
-kept lane-cost table times it (about 40 s) and writes it; the boot log says `lanes costs (kept)` or `(measured)`.
-Delete the folder to time them again. *The full `docker run` line (GPU and RDMA device flags, network mode, mount
-points, the serve command) is not documented in this repo yet.*
+Start rank 1 on the second Spark first:
+
+```sh
+docker run -d --name qwen38fn-r1 --gpus all --ipc=host --network host \
+  --device /dev/infiniband --cap-add IPC_LOCK --ulimit memlock=-1 \
+  -e NCCL_SOCKET_IFNAME=<LINK_IFACE> -e NCCL_IB_HCA=<RAIL0_DEV>,<RAIL1_DEV> \
+  -e NCCL_IB_GID_INDEX=3 -e NCCL_MIN_NCHANNELS=4 -e NCCL_MAX_NCHANNELS=4 \
+  --env-file tf.env -v "$MODEL_DIR":/model:ro -v "$CUDA_CACHE_DIR":/cache \
+  -v "$COST_CACHE_DIR":/root/.cache/tensorfold \
+  qwen4-tensorfold:tp2 serve /model --name Qwen3.8-Flash-Next --host 127.0.0.1 --port 8000 \
+  --context 1048576 --parallel 16 --max-tokens 32768 --thinking --thinking-budget 8192 --kv-cache fp8 \
+  --tp 2 --rank 1 --master <RANK0_LINK_IP> --master-port 29551
+```
+
+Then rank 0 on the first Spark, which serves on port 8000:
+
+```sh
+docker run -d --name qwen38fn-r0 --gpus all --ipc=host --network host \
+  --device /dev/infiniband --cap-add IPC_LOCK --ulimit memlock=-1 \
+  -e NCCL_SOCKET_IFNAME=<LINK_IFACE> -e NCCL_IB_HCA=<RAIL0_DEV>,<RAIL1_DEV> \
+  -e NCCL_IB_GID_INDEX=3 -e NCCL_MIN_NCHANNELS=4 -e NCCL_MAX_NCHANNELS=4 \
+  --env-file tf.env -v "$MODEL_DIR":/model:ro -v "$CUDA_CACHE_DIR":/cache \
+  -v "$COST_CACHE_DIR":/root/.cache/tensorfold \
+  qwen4-tensorfold:tp2 serve /model --name Qwen3.8-Flash-Next --host 127.0.0.1 --port 8000 \
+  --context 1048576 --parallel 16 --max-tokens 32768 --thinking --thinking-budget 8192 --kv-cache fp8 \
+  --tp 2 --rank 0 --master <RANK0_LINK_IP> --master-port 29551
+```
+
+`<LINK_IFACE>` is that Spark's link interface (`NCCL_SOCKET_IFNAME`), `<RAIL0_DEV>,<RAIL1_DEV>` its two RoCE rail
+devices (`NCCL_IB_HCA`), and `<RANK0_LINK_IP>` the first Spark's address on the link (`TP_MASTER`), the same on both.
+The serve flags are the profile's `SERVE_ARGS`. A rank with no kept lane-cost table in `COST_CACHE_DIR` times it
+(about 40 s) and writes it; the boot log says `lanes costs (kept)` or `(measured)`. Delete the folder to time them
+again. Startup (rank 1 launch to rank 0 ready) measured 69 s with the costs kept and 111 s without (on an
+earlier pin, `4c4e966eb`). Follow it with
+`docker logs -f qwen38fn-r0`.
+
+### 5. Check it answers
+
+```sh
+curl -s http://127.0.0.1:8000/v1/models
+curl -s http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{
+  "model": "Qwen3.8-Flash-Next",
+  "messages": [{"role": "user", "content": "What is 7^22 mod 1000003? Answer with the number."}],
+  "max_tokens": 4096
+}'
+```
+
+The first call lists the model. The second returns a chat completion: thinking is on, so the reasoning comes first
+and the answer after it. On TP1 the served model name is the one `/v1/models` lists; use that name in `model`.
+
+### Turn the lanes off
+
+The compute lane and the runner are engine settings in the env file. To serve without them, leave their keys out of
+`tf.env` and restart the containers, as the lanes-off measurements below did (the other keys unchanged):
+
+```sh
+grep -vE '^(TF_COMPUTE_LANE|TF_RUNNER)' tf.env > tf-lanes-off.env    # then --env-file tf-lanes-off.env
+```
+
+The same image serves either way.
 
 ## Measured results
 
@@ -129,7 +232,7 @@ thinking on.
 
 | Date | Engine | Result |
 | --- | --- | --- |
-| 2026-11-12 | `d306dc2fe` (= the pinned public twin `9c6c3d04c`) | an agent-client task writing 7^222 mod 1000003 and the sum of squares 1..2026 to a file, in opencode, 5 fresh sessions: 5/5 exact (22-66 s each); with `TF_RUNNER_INLINE_MARK=0` on the same image 4/5 |
+| 2026-11-12 | `d306dc2fe` (= the tree `patches/series.tp2` makes) | an agent-client task writing 7^222 mod 1000003 and the sum of squares 1..2026 to a file, in opencode, 5 fresh sessions: 5/5 exact (22-66 s each); with `TF_RUNNER_INLINE_MARK=0` on the same image 4/5 |
 | 2026-11-12 | `d306dc2fe` | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with no reasoning digit run past the exact value; with the mark off 8/9 (one reply ran away, 10,402 tokens) |
 | 2026-11-12 | `d306dc2fe` | computation-heavy subset 92/120 at 731 tokens a task, median 12.2 s |
 | 2026-11-12 | `d306dc2fe` | thinking-off set 17/20, all 20 replies byte-identical to the earlier pinned run, 0 runner cells |
@@ -161,7 +264,7 @@ at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decod
 | 2026-11-11 | `c8e930375` + compat | compat driver against host driver: speed score +5.5%; the same tokens on 116 paired requests, compat faster on all 116 |
 | 2026-11-11 | `1a7ed13bb` | computation-heavy subset 93/120, 120/120 replies identical; thinking-off set 0 runner cells, 18/20 |
 | 2026-11-12 | `501674d7f` | tool calls cut by `max_tokens` inside a value: 12/12 end cleanly; agent cells 40/40 token-identical to `1a7ed13bb`; check subset 68/72; thinking-off 18/20. The computation-heavy subset was not run on this commit. |
-| 2026-11-13 | `b62876185` (= the pinned public twin `9b1a0c175`) | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with 0 digit runaways |
+| 2026-11-13 | `b62876185` (= the tree `patches/series.tp1` makes) | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with 0 digit runaways |
 | 2026-11-13 | `b62876185` | computation-heavy subset 95/120 at 900 tokens a task |
 | 2026-11-13 | `b62876185` | lane categories 179/180; check subset 68/72; thinking-off set 18/20, all 20 replies identical to `501674d7f`'s |
 | 2026-11-13 | `b62876185` | a 12-prompt thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass |
@@ -214,13 +317,16 @@ publishes that checkpoint.
 
 | Path | What it is |
 | --- | --- |
-| `config/tensorfold.repo`, `config/tensorfold.rev` | the engine repo and the commit these recipes pin |
+| `vendor/TensorFold` | the engine: upstream TensorFold as a submodule, pinned (`config/tensorfold.repo`, `config/tensorfold.rev`), unmodified |
+| `patches/` | the engine changes as a numbered `git format-patch` series; `series.tp1` and `series.tp2` say which apply for each profile and the tree each must give |
+| `scripts/build.sh` | submodule, patches, native build, image layers |
+| `docker/` | the image layers: serving bases, runner layer, CUDA compat layer, and the manifests of Mia's kernel set and the compat driver |
+| `config/runner-assets.*` | the pinned runner-assets archive and its file list |
 | `profiles/provisional/*.env.example` | the profiles; copy each to a git-ignored `.env` |
 | `plans/` | the port plan |
-| `scripts/check.sh` | every check: ruff, the publication scan, the links check, the tests |
+| `scripts/check.sh` | this repo's checks: ruff, the publication scan, the links check, the tests |
 | `scripts/check-public.sh` | refuses private addresses, host names, home paths, credentials and local agent files |
-| `scripts/check_links.py` | every relative Markdown link and heading resolves |
-| `tests/` | pytest suite for the tooling and the profiles |
+| `tests/` | pytest suite for the tooling, the profiles and the patch series |
 
 The checks need Python 3.11+, ruff and pytest: `scripts/check.sh`. Put your own private names in
 `.check-public.local` (git-ignored, one extended regex per line). `scripts/check-public.sh --history` also scans every
@@ -228,12 +334,15 @@ commit and its author address.
 
 ## Credits
 
+- **TensorFold** upstream: https://github.com/ashhart/TensorFold (Apache-2.0). The engine is TensorFold; this repo
+  pins it unmodified and carries its changes as patches.
 - **Mia / MiaAI-Lab.** The TP2 engine and its serve settings are hers, from her dual-Spark recipe
   https://github.com/MiaAI-Lab/Qwen3.8-Flash-Dual-DGX-Sparks-TensorFold (Apache-2.0), forward-ported onto this
-  engine base. Her patches 0001-0008 and 0010-0012, including 0007 (the `tool_choice` call gate), are in the engine
-  branch as her own commits; her LICENSE, NOTICE and CREDITS ship in its `LICENSES/` folder. The CUDA 13.3
-  compat driver files and the Triton kernel set come from her image, and the decode protocol above is hers.
-- **TensorFold** upstream: https://github.com/ashhart/TensorFold (Apache-2.0).
+  engine base. Her patches 0001-0008 and 0010-0012, including 0007 (the `tool_choice` call gate), are patches
+  0002-0012 here, as her own commits (0001 adds her recipe's license notice); her LICENSE, NOTICE and CREDITS are in the patched tree's `LICENSES/` folder and
+  in the TP2 image's `/opt/mia-recipe`. The captured Triton kernel set the TP2 image carries is hers, built by her
+  recipe's image build and copied from her image. The CUDA 13.3 compat driver files both images carry are NVIDIA's,
+  as her NGC-based image ships them. The decode protocol above is hers.
 
 ## License
 

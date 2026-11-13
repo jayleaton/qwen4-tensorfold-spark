@@ -30,10 +30,13 @@ SELF="scripts/check-public.sh"
 LOCAL_LIST=".check-public.local"
 ALLOWED_AUTHOR="${ALLOWED_AUTHOR:-58495321+jayleaton@users.noreply.github.com}"
 
+# patches/ is the engine source, carried verbatim as published (its test fixtures, Mia / MiaAI-Lab's own comments
+# and notices): the three patterns that read that text as infrastructure skip it; every other pattern scans it.
+PATCHES_VERBATIM="patches/*.patch"
 # name|regex (grep -E, case-insensitive)|path globs excluded for this pattern (space-separated, may be empty)
 PATTERNS=(
     "private IPv4 192.168/16|\\b192\\.168\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|"
-    "private IPv4 10/8|\\b10\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|"
+    "private IPv4 10/8|\\b10\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|$PATCHES_VERBATIM"
     "private IPv4 172.16/12|\\b172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|"
     "CGNAT / Tailscale IPv4|\\b100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|"
     'Tailscale IPv6|fd7a:|'
@@ -43,11 +46,12 @@ PATTERNS=(
     'serial number|serial[ _-]?(number|no\.?)[ :=]|'
     'SSH public key|ssh-(ed25519|rsa|dss) AAAA|'
     'home directories|/home/[a-z0-9_-]+/|'
-    'root home paths|(^|[^a-z0-9_.-])/root/|'
+    # a path after ':' is a container's side of a docker -v mount (the images run as root), not a host's home
+    'root home paths|(^|[^a-z0-9_.:-])/root/|'
     'machine hostnames (dgx-01 style)|\bdgx-?[0-9]{1,2}\b|'
     'per-user cache / work paths|\.cache/tf[0-9]+-port|~/ai/|\.prod-stack|test-window-lease|'
-    'host OS tuning|polkit|sparkdash|irqbalance|smp_affinity|unattended-upgrade|auto-?reboot|\bwi-?fi\b|networkmanager|'
-    'agent tooling / chatter|\bt3[-_ ]?(code|gateway|agent)|agent-storage|claude[ -]code|\bcoordinator\b|\b(gpu|perf|dense|exchange|research|window) agent\b|'
+    'host OS tuning|polkit|sparkdash|irqbalance|smp_affinity|unattended-upgrade|auto-?reboot|\bwi-?fi\b|networkmanager|'"$PATCHES_VERBATIM"
+    'agent tooling / chatter|\bt3[-_ ]?(code|gateway|agent)|agent-storage|claude[ -]code|\bcoordinator\b|\b(gpu|perf|dense|exchange|research|window) agent\b|'"$PATCHES_VERBATIM"
     'private chat-history corpus output|local opencode database|opencode\.db|'
     'GPU / board identifiers|\bGPU-[0-9a-f]{8}-[0-9a-f]{4}|\bMIG-[0-9a-f]{8}|'
 )
@@ -103,7 +107,8 @@ if [[ $? -ne 0 ]]; then fail=1; echo "== credentials (scripts/check_secrets.py)"
 # e-mail addresses other than placeholder / example domains (model outputs in results/ invent a few)
 emails=$(grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}' "${FILES[@]}" 2>/dev/null |
          grep -viE '@(([a-z0-9-]+\.)*example(\.(com|org|net))?|company\.com|novatech\.io)$|:noreply@anthropic\.com$' |
-         grep -vF ":$ALLOWED_AUTHOR" | cut -c1-200)
+         grep -vF ":$ALLOWED_AUTHOR" |
+         grep -vE '^patches/[0-9]{4}-[^:/]*\.patch:2:MiaAI-Lab@users\.noreply\.github\.com$' | cut -c1-200)
 if [[ -n "$emails" ]]; then fail=1; echo "== e-mail addresses (not on the example-domain allowlist)"; echo "$emails"; fi
 
 # files that should never be published (.claude/ is local agent tooling, #52)

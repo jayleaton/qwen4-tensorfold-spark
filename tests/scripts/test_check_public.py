@@ -140,3 +140,13 @@ def test_bash32_empty_file_list(tmp_path, bash32):
     assert result.returncode == 2, result.stdout + result.stderr
     assert "no files to scan" in result.stderr
     assert "unbound variable" not in result.stderr
+
+
+def test_root_home_refused_but_a_container_mount_target_passes(tmp_path):
+    root = checkout(tmp_path)
+    f = root / "doc.md"
+    f.write_text('docker run -v "$COST_CACHE_DIR":/root/.cache/tensorfold image\n')
+    subprocess.run(["git", "add", f.name], cwd=root, check=True)
+    assert scan(root).returncode == 0
+    f.write_text("cp notes.txt " + "/".join(("", "root", "notes.txt")) + "\n")
+    assert scan(root).returncode == 1

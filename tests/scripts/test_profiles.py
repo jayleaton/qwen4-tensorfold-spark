@@ -52,10 +52,49 @@ def test_profile_claims_nothing_unmeasured(size):
         assert not any(k.startswith(("TF_TP_", "NCCL_")) for k in v)
 
 
-def test_engine_pin_is_tbd_or_a_full_sha():
+UPSTREAM = "https://github.com/ashhart/TensorFold.git"
+
+
+def series(tp):
+    """patches/series.<tp>: its base commit, its tree and the patch files in order."""
+    base = tree = None
+    names = []
+    for line in (ROOT / "patches" / f"series.{tp}").read_text().splitlines():
+        if line.startswith("base "):
+            base = line.split()[1]
+        elif line.startswith("tree "):
+            tree = line.split()[1]
+        elif line and not line.startswith("#"):
+            names.append(line)
+    return base, tree, names
+
+
+def test_engine_is_upstream_tensorfold_pinned_as_the_submodule():
     pin = (ROOT / "config/tensorfold.rev").read_text().strip()
-    assert pin == "TBD" or re.fullmatch(r"[0-9a-f]{40}", pin)
-    assert (ROOT / "config/tensorfold.repo").read_text().strip() == "https://github.com/jayleaton/TensorFold.git"
+    assert re.fullmatch(r"[0-9a-f]{40}", pin)
+    assert (ROOT / "config/tensorfold.repo").read_text().strip() == UPSTREAM
+    gitmodules = (ROOT / ".gitmodules").read_text()
+    assert "path = vendor/TensorFold" in gitmodules and f"url = {UPSTREAM}" in gitmodules
+    assert "jayleaton/TensorFold" not in gitmodules
+
+
+def test_patch_series_tp2_is_a_prefix_of_tp1_and_names_every_patch_once():
+    pin = (ROOT / "config/tensorfold.rev").read_text().strip()
+    b1, t1, tp1 = series("tp1")
+    b2, t2, tp2 = series("tp2")
+    assert b1 == b2 == pin
+    assert re.fullmatch(r"[0-9a-f]{40}", t1) and re.fullmatch(r"[0-9a-f]{40}", t2) and t1 != t2
+    assert tp1[: len(tp2)] == tp2 and len(tp1) > len(tp2)
+    assert tp1 == sorted(p.name for p in (ROOT / "patches").glob("*.patch"))
+    assert [n[:4] for n in tp1] == [f"{i:04d}" for i in range(1, len(tp1) + 1)]
+
+
+def assert_engine_pin(v, tp):
+    """A tool-full profile builds upstream TensorFold at the submodule pin plus its series, tagged as build.sh tags."""
+    assert v["ENGINE_REPO"] == (ROOT / "config/tensorfold.repo").read_text().strip() == UPSTREAM
+    assert v["ENGINE_REV"] == (ROOT / "config/tensorfold.rev").read_text().strip()
+    assert v["ENGINE_PATCHES"] == f"patches/series.{tp}"
+    assert v["IMAGE"] == f"qwen4-tensorfold:{tp}"
 
 
 def test_flash_next_control_is_tp1_with_its_measured_chunks():
@@ -83,8 +122,7 @@ def test_flash_next_candidate_pins_its_engine_and_runs_compute_in_engine():
     assert not any(k.startswith(("TF_TP_", "NCCL_", "TF_DSV41_")) for k in v)
     for k in ("MODEL_DIR", "PREPARED_DIR", "STATE_DIR"):
         assert v[k].startswith("<") and name in v[k]
-    assert re.fullmatch(r"[0-9a-f]{40}", v["ENGINE_REV"]) and v["ENGINE_REV"][:12] in v["IMAGE"]
-    assert v["ENGINE_REPO"] == (ROOT / "config/tensorfold.repo").read_text().strip()
+    assert_engine_pin(v, "tp1")
     for k in ("CHECKPOINT", "QUANT_FORMAT", "CONTEXT", "TF_FLASHNEXT_CHUNK", "TF_FLASHNEXT_CHUNK_SOLO"):
         assert v[k] == control[k], k
     # compute runs in the engine for every request: the lane, its server-side default, the runner and S3 all on
@@ -104,8 +142,7 @@ def test_flash_next_tp2_candidate_pins_its_engine_and_credits_her_recipe():
     assert not any(k.startswith("TF_DSV41_") for k in v)
     for k in ("MODEL_DIR", "PREPARED_DIR", "STATE_DIR", "COST_CACHE_DIR"):
         assert v[k].startswith("<") and name in v[k]
-    assert re.fullmatch(r"[0-9a-f]{40}", v["ENGINE_REV"]) and v["ENGINE_REV"][:12] in v["IMAGE"]
-    assert v["ENGINE_REPO"] == (ROOT / "config/tensorfold.repo").read_text().strip()
+    assert_engine_pin(v, "tp2")
     assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", v["CHECKPOINT"])
     assert v["TF_FLASHNEXT_ENGINE"] == "mia"
     for k in ("TP_MASTER", "NCCL_SOCKET_IFNAME", "NCCL_IB_HCA"):
