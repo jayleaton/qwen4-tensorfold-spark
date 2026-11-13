@@ -280,6 +280,9 @@ The full measurement notes, with every arm, are the comment blocks in each profi
 
 - **Text only on TP2.** Mia's patch 0009 (Python vision) is not ported. The TP2 port refuses `--vision`; her vision
   settings stay in the profile as measured.
+- **No structured output on TP2.** The TP2 engine answers `response_format` (JSON object or JSON schema) and the
+  `guided_*` fields with HTTP 400 ("not supported by this engine yet"). Forced tool calls (`tool_choice` required,
+  named, any) work. TP1 serves both.
 - **TP1 tool-full: long exact integers.** The 4-bit TP1 model opens its reasoning by quoting the request. When the
   request itself held `7^222 =`, the runner used to write the exact value into that quotation; the model then took the
   value for the user's text and could run on into long invented digit runs. The pinned engine abstains on an inline
