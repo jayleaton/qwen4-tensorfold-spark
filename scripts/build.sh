@@ -16,7 +16,9 @@
 # default 1: the native compile needs about 5 GiB at -j1), XGRAMMAR (an xgrammar checkout at XGRAMMAR_COMMIT with its
 # submodules; default build/xgrammar, cloned if missing), MIA_IMAGE (TP2: her recipe's image, default her published
 # image by digest), COMPAT_IMAGE (TP1: an image holding the CUDA 13.3 compat driver files; default MIA_IMAGE's base,
-# NVIDIA's PyTorch 26.07 container, by digest), IMAGE_PREFIX.
+# NVIDIA's PyTorch 26.07 container, by digest), IMAGE_PREFIX, DOCKER_BUILD_FLAGS and DOCKER_RUN_FLAGS (extra words for
+# each docker build / docker run, e.g. resource limits: DOCKER_BUILD_FLAGS='--memory 4g --memory-swap 4g' with
+# DOCKER_BUILDKIT=0, as BuildKit ignores --memory).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT=$PWD
@@ -41,6 +43,8 @@ COMPAT_IMAGE=${COMPAT_IMAGE:-nvcr.io/nvidia/pytorch@sha256:2140e699b3beaf7f96a00
 COMPAT_PATH=/usr/local/cuda-13.3/compat/lib.real
 IMAGE_PREFIX=${IMAGE_PREFIX:-qwen4-tensorfold}
 TAG=$IMAGE_PREFIX:$P
+read -ra BUILD_FLAGS <<< "${DOCKER_BUILD_FLAGS:-}"
+read -ra RUN_FLAGS <<< "${DOCKER_RUN_FLAGS:-}"
 log() { echo "build.sh $P: $*"; }
 die() { echo "build.sh $P: $*" >&2; exit 1; }
 
@@ -129,18 +133,18 @@ step_image() {
     for f in LICENSE.txt NOTICE.txt CREDITS.md; do cp "$SRC/LICENSES/MiaAI-Lab-DualTF-$f" "$ctx/base/mia-recipe/"; done
     compat_dir "$MIA_IMAGE" "$ctx/base/compat"
   fi
-  docker build -f "docker/$P.Dockerfile" --build-arg "ENGINE_TREE=$TREE" -t "$TAG-base" "$ctx/base"
+  docker build ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} -f "docker/$P.Dockerfile" --build-arg "ENGINE_TREE=$TREE" -t "$TAG-base" "$ctx/base"
   python3 -I scripts/fetch_runner_assets.py config/runner-assets.release config/runner-assets.sha256 "$ctx/runner/runner"
   local runner_tag=$TAG
   [[ $P == tp1 ]] && runner_tag=$TAG-runner
-  docker build -f docker/runner.Dockerfile --build-arg "BASE_IMAGE=$TAG-base" -t "$runner_tag" "$ctx/runner"
+  docker build ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} -f docker/runner.Dockerfile --build-arg "BASE_IMAGE=$TAG-base" -t "$runner_tag" "$ctx/runner"
   if [[ $P == tp1 ]]; then
     mkdir "$ctx/compat"
     compat_dir "$COMPAT_IMAGE" "$ctx/compat/compat"
-    docker build -f docker/compat/Dockerfile --build-arg "BASE_IMAGE=$runner_tag" -t "$TAG" "$ctx/compat"
+    docker build ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} -f docker/compat/Dockerfile --build-arg "BASE_IMAGE=$runner_tag" -t "$TAG" "$ctx/compat"
   fi
   # with no GPU the entry falls back to the host driver, and TF_CUDA_COMPAT=0 says so
-  local run=(docker run --rm --network none -e NVIDIA_VISIBLE_DEVICES=void -e CUDA_VISIBLE_DEVICES=
+  local run=(docker run ${RUN_FLAGS[@]+"${RUN_FLAGS[@]}"} --rm --network none -e NVIDIA_VISIBLE_DEVICES=void -e CUDA_VISIBLE_DEVICES=
     --entrypoint /opt/tensorfold/bin/tf-compat-entry "$TAG" /bin/true)
   [[ $("${run[@]}" 2>&1) == *'host CUDA driver'* ]] || die "$TAG: tf-compat-entry check failed"
   log "image: $TAG $(docker image inspect -f '{{.Id}}' "$TAG") (engine tree $TREE)"
