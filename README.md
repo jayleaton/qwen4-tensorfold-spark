@@ -6,7 +6,7 @@ Support me here: https://buymeacoffee.com/jayleaton
 
 **This repo is the recipe (profiles, patches, build script and docs), not the engine.** The engine is
 [TensorFold](https://github.com/ashhart/TensorFold), written in Zig: the pinned, unmodified submodule
-`vendor/TensorFold` plus the 79 patches in [`patches/`](patches), applied when you build the image. The Python files
+`vendor/TensorFold` plus the 83 patches in [`patches/`](patches), applied when you build the image. The Python files
 here are only this repo's own checks.
 
 The profiles serve Qwen3.8-Flash-Next, the released preview of the Qwen4 architecture, with the engine's compute lane
@@ -17,8 +17,8 @@ calls on that runner. The Qwen4 profiles are placeholders: no Qwen4 checkpoint h
 
 | You have | Profile | Patches | Checkpoint |
 | --- | --- | --- | --- |
-| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0079) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
-| **two linked Sparks** | **TP2**: [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `patches/series.tp2` (0001-0076) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4, 1,048,576 context |
+| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0083) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
+| **two linked Sparks** | **TP2**: [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `patches/series.tp2` (0001-0080) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4, 1,048,576 context |
 
 Then follow the steps below: [build the image](#2-build-the-image), [serve on one Spark](#3-serve-on-one-spark-tp1)
 or [on two](#4-serve-on-two-sparks-tp2), and [check it answers](#5-check-it-answers).
@@ -33,14 +33,27 @@ in `CHECKPOINT` (`repo@revision`).
 
 | | |
 | --- | --- |
-| Upstream | [`ashhart/TensorFold`](https://github.com/ashhart/TensorFold) at `f212eeabde0fc2ac3234ca947a69cc7714abaca2` (the `vendor/TensorFold` submodule, `config/tensorfold.rev`), unmodified |
-| `patches/0001`-`0076` | the TP2 engine: Mia's dual-Spark Flash-Next engine as `flashnext_mia` (0002-0012: her own commits, authored MiaAI-Lab), then the compute lane, the in-model runner and its frontend, the call gates, `tool_choice`, the thinking-budget fixes, lane cost keeping and the runner's digit stop |
-| `patches/0077`-`0079` | three runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, and the quoted rule (no engine value inside an open quotation) |
+| Upstream | [`ashhart/TensorFold`](https://github.com/ashhart/TensorFold) at `aaac299d1d90c2625e54cb50f3f0d1494c1c33ea` (the `vendor/TensorFold` submodule, `config/tensorfold.rev`), unmodified |
+| `patches/0001`-`0080` | the TP2 engine: Mia's dual-Spark Flash-Next engine as `flashnext_mia` (0002-0012: her own commits, authored MiaAI-Lab), then the compute lane, the in-model runner and its frontend, the call gates, `tool_choice`, the thinking-budget fixes, lane cost keeping and the runner's digit stop (0001-0076); then, for this base, three lean commits and one settings fix (0077-0080, below) |
+| `patches/0081`-`0083` | three runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, and the quoted rule (no engine value inside an open quotation) |
 | `patches/series.tp1`, `series.tp2` | which patches each profile applies, in order, and the tree sha the result must have |
 
-The patches are a `git format-patch` series; each keeps its original author. Applied with `git am`, `series.tp2` gives
-exactly the tree the TP2 measurements ran (`d306dc2fe26e`), and `series.tp1` the tree the TP1 measurements ran
-(`b62876185195`). `scripts/build.sh` refuses to go on if the tree differs.
+The patches are a `git format-patch` series; each keeps its original author. `scripts/build.sh` applies them with
+`git am` and refuses to go on unless the tree is the one the series file pins.
+
+**Base moved 2026-11-13** from `f212eeabd` to upstream main `aaac299d1` (786 upstream commits). The engine commits are
+the same, moved over: the TP1 runner commits change line for line what they did on `f212eeabd`, and the conflict
+resolutions keep upstream's code and ours side by side. Four commits are new on this base:
+- 0077 and 0078 keep three files under the 600-line limit and two test comments under 120 columns;
+- 0079: upstream's own Flash Next now reads four settings Mia's engine also reads (`TF_FLASHNEXT_CONFIDENCE`,
+  `_KEEP_LATE`, `_PROFILE`, `_SHARED_SIDE`), and each now has one definition, upstream's. `TF_FLASHNEXT_SHARED_SIDE`
+  takes `0` or `1` only (it used to take `on` and `off` too). No profile sets any of them;
+- 0080 keeps `native/cuda.zig` under the limit on this base.
+
+**Measured results ran the `f212eeabd` builds:** TP2 `d306dc2fe26e` and TP1 `b62876185195`. On this base only the
+CPU gates ran (native build, host test suites, `lean` and `zig fmt` against upstream, the macOS compile), plus the
+boot smoke named under [Measured results](#measured-results). The benchmarks were not rerun. To build the measured
+trees exactly, check out the recipe at `e2aca8b`.
 
 ## Prerequisites
 
@@ -234,7 +247,8 @@ thinking on.
 
 | Date | Engine | Result |
 | --- | --- | --- |
-| 2026-11-12 | `d306dc2fe` (= the tree `patches/series.tp2` makes) | an agent-client task writing 7^222 mod 1000003 and the sum of squares 1..2026 to a file, in opencode, 5 fresh sessions: 5/5 exact (22-66 s each); with `TF_RUNNER_INLINE_MARK=0` on the same image 4/5 |
+| 2026-11-13 | `20c1fb1a3` (the tree `patches/series.tp2` makes on `aaac299d1`) | boot smoke only, the image built with `scripts/build.sh tp2` and served with section 4's lines: ready 132 s after rank 0 started; section 5's curl answers 30584 (7^22 mod 1000003); thinking on, off, streamed and a client tool call pass; `tool_choice` required, named and any pass; both ranks on the CUDA 13.3 compat driver. Benchmarks not rerun. |
+| 2026-11-12 | `d306dc2fe` (the tree `patches/series.tp2` made on `f212eeabd`, recipe `e2aca8b`) | an agent-client task writing 7^222 mod 1000003 and the sum of squares 1..2026 to a file, in opencode, 5 fresh sessions: 5/5 exact (22-66 s each); with `TF_RUNNER_INLINE_MARK=0` on the same image 4/5 |
 | 2026-11-12 | `d306dc2fe` | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with no reasoning digit run past the exact value; with the mark off 8/9 (one reply ran away, 10,402 tokens) |
 | 2026-11-12 | `d306dc2fe` | computation-heavy subset 92/120 at 731 tokens a task, median 12.2 s |
 | 2026-11-12 | `d306dc2fe` | thinking-off set 17/20, all 20 replies byte-identical to the earlier pinned run, 0 runner cells |
@@ -266,10 +280,11 @@ at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decod
 | 2026-11-11 | `c8e930375` + compat | compat driver against host driver: speed score +5.5%; the same tokens on 116 paired requests, compat faster on all 116 |
 | 2026-11-11 | `1a7ed13bb` | computation-heavy subset 93/120, 120/120 replies identical; thinking-off set 0 runner cells, 18/20 |
 | 2026-11-12 | `501674d7f` | tool calls cut by `max_tokens` inside a value: 12/12 end cleanly; agent cells 40/40 token-identical to `1a7ed13bb`; check subset 68/72; thinking-off 18/20. The computation-heavy subset was not run on this commit. |
-| 2026-11-13 | `b62876185` (= the tree `patches/series.tp1` makes) | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with 0 digit runaways |
+| 2026-11-13 | `b62876185` (the tree `patches/series.tp1` made on `f212eeabd`, recipe `e2aca8b`) | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with 0 digit runaways |
 | 2026-11-13 | `b62876185` | computation-heavy subset 95/120 at 900 tokens a task |
 | 2026-11-13 | `b62876185` | lane categories 179/180; check subset 68/72; thinking-off set 18/20, all 20 replies identical to `501674d7f`'s |
 | 2026-11-13 | `b62876185` | a 12-prompt thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass |
+| 2026-11-13 | `187e28a03` (the tree `patches/series.tp1` makes on `aaac299d1`) | boot smoke only, the image built with `scripts/build.sh tp1` and served with section 3's line: ready 181 s; section 5's curl answers 30584; thinking on, off, streamed and a client tool call pass; a computation prompt ran code in the lane (2 calls) and ended with its answer; `tool_choice` required, named and any pass; the CUDA 13.3 compat driver is on. Benchmarks not rerun. |
 
 Decode on `c8e930375`: 48.8 / 47.8 / 53.8 tokens/s at 841 / 6k / 24k-token prompts, 85.1 with 4 at once. With the
 compat driver: 53.6 / 49.5 / 55.3, 93.6 with 4 at once. Single cells move several percent between boots.

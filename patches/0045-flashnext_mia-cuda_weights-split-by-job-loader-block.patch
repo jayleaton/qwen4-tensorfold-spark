@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 15:31:34 +0700
-Subject: [PATCH 45/79] flashnext_mia: cuda_weights split by job (loader,
+Subject: [PATCH 45/83] flashnext_mia: cuda_weights split by job (loader,
  blocks, fp8, experts, ple)
 
 Pure code motion under 600 lines: declarations moved whole, moved methods aliased in their struct, pub where another file now calls them.

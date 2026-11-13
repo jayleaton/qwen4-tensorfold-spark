@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 17:25:38 +0700
-Subject: [PATCH 24/79] runner: the circuit loader, exact CPU evaluator and
+Subject: [PATCH 24/83] runner: the circuit loader, exact CPU evaluator and
  thread placement in core
 
 First slice of the in-thinking runner port, from the DSV41
@@ -67,22 +67,22 @@ and the one log line name the generic <prefix>_CPUS / TF_RUNNER_* spelling.
  create mode 100644 zig/src/core/runner_place_bench.zig
 
 diff --git a/build.zig b/build.zig
-index ebf078a0e..18e2021fe 100644
+index c871eac85..33cacf7f4 100644
 --- a/build.zig
 +++ b/build.zig
-@@ -69,6 +69,7 @@ pub fn build(b: *std.Build) void {
-     @import("zig/build/qwen35_cache_host.zig").tests(b);
-     @import("zig/build/residency_host.zig").steps(b);
+@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) void {
+     @import("zig/build/cluster_host.zig").steps(b);
      @import("zig/build/lane_halt_host.zig").steps(b);
+     @import("zig/build/cache_replay.zig").steps(b);
 +    @import("zig/build/runner_place.zig").steps(b);
      @import("zig/build/dsv41_shared.zig").steps(b);
      @import("zig/build/dsv41_cuda.zig").steps(b);
      @import("zig/build/dsv41_state.zig").steps(b);
 diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
-index 95f0e6b2f..3c9347b22 100644
+index 5a4e9b2a6..115bef628 100644
 --- a/zig/build/cuda.zig
 +++ b/zig/build/cuda.zig
-@@ -206,6 +206,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+@@ -208,6 +208,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
      const host = b.graph.host;
      step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/build/check_fatbins.zig"), .target = host }) })).step);
      @import("compute_lane_host.zig").steps(b, host, step);

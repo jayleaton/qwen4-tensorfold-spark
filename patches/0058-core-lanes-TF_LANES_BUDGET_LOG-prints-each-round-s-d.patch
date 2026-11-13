@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 22:25:21 +0700
-Subject: [PATCH 58/79] core lanes: TF_LANES_BUDGET_LOG prints each round's
+Subject: [PATCH 58/83] core lanes: TF_LANES_BUDGET_LOG prints each round's
  draft budgets, the head's drafts and the overhead they priced
 
 Off by default and read once at engine init. When it is 1, each shared or lone head round writes one
@@ -22,17 +22,17 @@ when the table changes. The budgets and overhead events move into trail.zig, so 
  create mode 100644 zig/src/core/lanes/budget_log.zig
 
 diff --git a/docs/environment.md b/docs/environment.md
-index 08e4d6843..b40f0cfb6 100644
+index ec3788135..1ee204c83 100644
 --- a/docs/environment.md
 +++ b/docs/environment.md
-@@ -15,6 +15,7 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
- | `TENSORFOLD_RESTORE_PREFETCH_GIB` | Whole unsigned 64-bit GiB count, capped at 16777216; default 16 |
+@@ -16,6 +16,7 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
  | `TENSORFOLD_RESTORE_PREFETCH_MS` | Whole unsigned 64-bit milliseconds, capped at 1099511627776; default 30000 |
  | `TENSORFOLD_TOOL_ID_KEY_FILE` | The path of the file that holds the key for tool-call ids ([API](api.md#messages-and-tools)). The file must be a regular file, not a link, that only its owner can read or write (`chmod 600`), with 32 to 4096 bytes in it, and the path must not contain control characters. When this is unset, each server process makes its own random key. If the file is wrong, the server does not start; the message names this setting but never shows the path or what the file holds |
+ | `TF_STARTUP_RECEIPT` | Exactly `0` or `1`; default off. `1` writes the startup and first completion receipts |
 +| `TF_LANES_BUDGET_LOG` | Exactly `0` or `1`; `1` writes a `[lanes-budget]` stderr line each shared or lone head round of the lane engine, and a `[lanes-costs]` line every 32 of them or when its shared-cost table changes; default off |
  | `TF_CUDA_DEVICE` | Whole ordinal 0 through 4294967295, or empty; default 0 |
  | `TF_CUDA_SEGMENTS` | Whole count 1 through 4, or empty; default 1 |
- | `TF_CUDA_CARVEOUT` | Exactly `0` or `1`; default off |
+ | `TENSORFOLD_CUDA_KERNELS` | A path without control characters, used as given: a captured kernel set's folder, or `native` for the engine's own kernels. Unset uses the binary's bundled set for the GPU when it has one, else the engine's own kernels. A family that runs only on the engine's own kernels (Qwen3 among them) refuses any other value; Qwen3 reads a blank value as unset |
 diff --git a/zig/src/core/lanes/budget_log.zig b/zig/src/core/lanes/budget_log.zig
 new file mode 100644
 index 000000000..63eab8327
@@ -207,7 +207,7 @@ index 000000000..63eab8327
 +    try std.testing.expectEqualStrings("[lanes-costs] step=7 rows=1:5.000,2:5.250 over=1:0.500+0.000,16:2.000+0.250", buf[0..w.end]);
 +}
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 127782ac4..062e02f7d 100644
+index 451a39727..4baddf23e 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -39,6 +39,7 @@ pub const Engine = struct {
@@ -218,7 +218,7 @@ index 127782ac4..062e02f7d 100644
      trim: ?trim.Trim = null, // a family's row policy in place of the built-in allocation (lanes/trim.zig)
      rule: depth.Rule,
      live: std.ArrayList(*Stream) = .empty, // admitted streams in admission order (Python `_live`)
-@@ -61,6 +62,7 @@ pub const Engine = struct {
+@@ -60,6 +61,7 @@ pub const Engine = struct {
              .backend = backend,
              .clock = clock,
              .arena = std.heap.ArenaAllocator.init(gpa),
@@ -256,10 +256,10 @@ index 127782ac4..062e02f7d 100644
          }
          if (e.backend.round_observer != null) e.backend.observed(paths);
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index af04bc87b..926e9358a 100644
+index 0472482f8..9054c05b7 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -34,6 +34,7 @@ pub const windows = @import("windows.zig");
+@@ -35,6 +35,7 @@ pub const windows = @import("windows.zig");
  pub const shared_drafts = @import("shared_drafts.zig");
  pub const row_cost = @import("row_cost.zig");
  pub const trail = @import("trail.zig");
@@ -293,19 +293,19 @@ index e68775c1b..218b82d00 100644
      try event(e, &.{ f("ev", str("pipe")), f("stream", str(s.id)), f("mode", modeName(before)), f("after", modeName(s.mode)), f("got", .{ .u32s = got }) });
  }
 diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
-index d5c13cf48..e1d8553b9 100644
+index d4eed197c..ae3170854 100644
 --- a/zig/src/platform/environment.zig
 +++ b/zig/src/platform/environment.zig
-@@ -37,6 +37,7 @@ pub const rules = [_]Rule{
+@@ -38,6 +38,7 @@ pub const rules = [_]Rule{
      .{ .name = "TENSORFOLD_RESTORE_PREFETCH", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "a whole unsigned 64-bit read count (0 disables reading ahead; capped at 65536)" },
      .{ .name = "TENSORFOLD_RESTORE_PREFETCH_GIB", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "a whole unsigned 64-bit GiB count (capped at 16777216)" },
      .{ .name = "TENSORFOLD_RESTORE_PREFETCH_MS", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "whole unsigned 64-bit milliseconds (capped at 1099511627776)" },
 +    .{ .name = "TF_LANES_BUDGET_LOG", .scope = .common, .kind = .flag, .forms = "0 or 1" },
      .{ .name = "TENSORFOLD_TOOL_ID_KEY_FILE", .scope = .common, .kind = .path, .forms = "a path without control characters to a file only its owner can read, holding at least 32 key bytes" },
+     .{ .name = "TENSORFOLD_CUDA_KERNELS", .scope = .cuda, .kind = .path, .forms = "a captured kernel set's folder without control characters, or native for the engine's own kernels" },
      .{ .name = "TF_CUDA_DEVICE", .scope = .cuda, .kind = .device, .trim = " ", .forms = "a whole GPU ordinal from 0 to 4294967295, or empty for the default" },
-     .{ .name = "TF_CUDA_SEGMENTS", .scope = .cuda, .kind = .segments, .trim = " ", .forms = "a whole number from 1 to 4, or empty for the default" },
 diff --git a/zig/src/platform/environment_test.zig b/zig/src/platform/environment_test.zig
-index 8fa77b058..3181f34b7 100644
+index 18ea995e2..492b1924a 100644
 --- a/zig/src/platform/environment_test.zig
 +++ b/zig/src/platform/environment_test.zig
 @@ -46,6 +46,8 @@ const valid = [_]Case{
@@ -315,5 +315,5 @@ index 8fa77b058..3181f34b7 100644
 +    .{ .name = "TF_LANES_BUDGET_LOG", .raw = "0", .n = 0 },
 +    .{ .name = "TF_LANES_BUDGET_LOG", .raw = "1", .n = 1 },
      .{ .name = "TENSORFOLD_TOOL_ID_KEY_FILE", .raw = "/etc/tensorfold/tool id.key", .n = 0 },
-     .{ .name = "TF_CUDA_DEVICE", .raw = " 3 ", .n = 3 },
-     .{ .name = "TF_CUDA_DEVICE", .raw = "4294967295", .n = std.math.maxInt(u32) },
+     .{ .name = "TF_STARTUP_RECEIPT", .raw = "0", .n = 0 },
+     .{ .name = "TF_STARTUP_RECEIPT", .raw = "1", .n = 1 },

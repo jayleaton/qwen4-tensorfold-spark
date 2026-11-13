@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 21:01:48 +0700
-Subject: [PATCH 76/79] runner: no drawn digit right after an owned inline
+Subject: [PATCH 76/83] runner: no drawn digit right after an owned inline
  integer in reasoning, and a reasoning digit-run cap
 
 On Qwen3.8-Flash-Next TP2 the model kept extending owned inline values (7^64, 7^216, 7^220, 7^222) by
@@ -42,12 +42,12 @@ each beside a negative control; mutating either lanes call site fails the fake-t
  create mode 100644 zig/src/core/runner_tests.zig
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 629b975e5..a96f6ed74 100644
+index 1b929a138..deb071e75 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+@@ -348,6 +348,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
  
- ## Unreleased
+ - Tests: `zig build sessions-writes` drives the real DeepSeek-V4.1 session store and NVMe index with synthetic agent, chat and mixed loads, no model or GPU, and reports the bytes an enabled tier (`TF_DSV41_SESSION_DISK`) writes and reads back; a nightly Linux test checks its accounting against real files (#2660).
  
 +- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged.
 +
@@ -55,10 +55,10 @@ index 629b975e5..a96f6ed74 100644
  - Tests: `zig build bench-stream-scan` streams a 32k-token thinking reply (30,000 reasoning tokens, prose, then a Qwen XML, GLM, DSML or Kimi call) through the chat, Messages and Responses routes one or two tokens a chunk, and prints each chunk's request-thread time at 1k to 30k reply tokens, each whole-text step's time and the request arena; under `test-server-cpu` a 300-token reply checks that each route's streamed reasoning, prose and call arguments equal the reply's (#2642).
  
 diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
-index 1fe74e47c..521a1fe6f 100644
+index 23ff2daef..4bbc8fa2b 100644
 --- a/zig/build/lane_halt_host.zig
 +++ b/zig/build/lane_halt_host.zig
-@@ -21,6 +21,9 @@ pub fn steps(b: *std.Build) void {
+@@ -23,6 +23,9 @@ pub fn steps(b: *std.Build) void {
      b.step("test-settle-fire-host", "PREFIX_SYNC_GRAPH on the fake target: fires settled at their trigger never hold").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"settled fires:"} })).step);
      b.step("test-forced-rows-host", "A held fire's forced result lands whole on the fake target: no hold inside it").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"forced rows:"} })).step);
      b.step("test-budget-hold-host", "The thinking budget beside a held tool result on the fake target: the result lands whole, then the close").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"budget hold:"} })).step);
@@ -69,7 +69,7 @@ index 1fe74e47c..521a1fe6f 100644
      // proof 2 on the real circuit (TF_RUNNER_CIRCUIT): optimized, since a debug evaluator takes minutes a run
      const lanes_fast = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = b.graph.host, .optimize = .ReleaseSafe, .link_libc = true });
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index b850457f3..51fbae6a7 100644
+index ac20da93f..00afe15ae 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -509,6 +509,7 @@ pub const Engine = struct {
@@ -89,10 +89,10 @@ index b850457f3..51fbae6a7 100644
          s.rounds += 1;
          const landed = try s.commit(e.gpa, &.{token}, &.{});
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index ef0708136..84c46c151 100644
+index 5b2e26f6b..7a9f31024 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -47,6 +47,7 @@ pub const recorder = @import("recorder.zig");
+@@ -50,6 +50,7 @@ pub const recorder = @import("recorder.zig");
  pub const logprob = @import("logprob.zig");
  pub const grammar = @import("grammar.zig");
  pub const call_gate = @import("call_gate.zig"); // tool_choice required or named without a grammar (patch 0007)
@@ -100,7 +100,7 @@ index ef0708136..84c46c151 100644
  pub const grammar_time = @import("grammar_time.zig");
  pub const grammar_fake = @import("grammar_fake.zig"); // a stand-in libtfgrammar for tests
  
-@@ -71,6 +72,7 @@ test {
+@@ -74,6 +75,7 @@ test {
      _ = @import("hold_test.zig");
      _ = @import("fire_replay_test.zig");
      _ = @import("settle_fire_test.zig");

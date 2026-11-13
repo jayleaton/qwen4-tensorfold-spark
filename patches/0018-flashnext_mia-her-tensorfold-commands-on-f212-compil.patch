@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 14:47:50 +0700
-Subject: [PATCH 18/79] flashnext_mia: her tensorfold commands on f212,
+Subject: [PATCH 18/83] flashnext_mia: her tensorfold commands on f212,
  compiled by check-flashnext-mia-cli
 
 Her CLI reads her Media type from flashnext_mia.media. check-flashnext-mia-cli compiles the tensorfold
@@ -14,10 +14,10 @@ commands are checked; test-flashnext-mia-host depends on it.
  3 files changed, 13 insertions(+), 2 deletions(-)
 
 diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
-index 15f1a1976..a33d4aa5e 100644
+index e126411fa..b9fd64bf1 100644
 --- a/zig/build/cuda.zig
 +++ b/zig/build/cuda.zig
-@@ -392,6 +392,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+@@ -400,6 +400,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
      cli.addImport("flashnext_mia", native_modules.engines.import_table.get("flashnext_mia").?);
      cli.addOptions("build_options", build_options);
      cli.addImport("checkpoint_cli", checkpointCli(b, host, .debug, false, native_modules.engines, mods.core));

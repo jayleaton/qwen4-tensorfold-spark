@@ -1,13 +1,13 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Fri, 13 Nov 2026 10:01:40 +0700
-Subject: [PATCH 78/79] runner: no drawn word character glued to an owned span
+Subject: [PATCH 82/83] runner: no drawn word character glued to an owned span
  that ends in one (the inline mark)
 
 With TF_RUNNER_INLINE_MARK=1 an owned inline value ends in " @engine", and arm() only armed spans ending in a digit,
 so nothing guarded the model's first draw after the mark. On Qwen3.8-Flash-Next TP1 the model wrote "@engineer" in 4 of
 9 replies of the digit-run set; in 13^150 seed 13 it went on to "@engineer-mike/secret-repo!" and a 1,024-digit run
-that shares no digit with the value (the gate's one runaway on 9c6c3d04c and dfa78a260 alike).
+that shares no digit with the value (the gate's one runaway on d306dc2fe and ab34d28c8 alike).
 
 arm() now also arms a span whose tail ends in a word character (TF_RUNNER_MARK_STOP, on by default): the model's
 first draw after it may not start with a letter, digit, "_", "-" or "/", and is replaced by the newline as the digit
@@ -32,12 +32,12 @@ stop against a digit stop's hold, the session path with the mark on and off, and
  create mode 100644 zig/src/core/lanes/testdata/runner-stop-13p150-s13.json
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 28edf95fa..640d58b5f 100644
+index ec7e17249..1a3f4433c 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -4,7 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+@@ -348,7 +348,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
  
- ## Unreleased
+ - Tests: `zig build sessions-writes` drives the real DeepSeek-V4.1 session store and NVMe index with synthetic agent, chat and mixed loads, no model or GPU, and reports the bytes an enabled tier (`TF_DSV41_SESSION_DISK`) writes and reads back; a nightly Linux test checks its accounting against real files (#2660).
  
 -- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line.
 +- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line. With `TF_RUNNER_INLINE_MARK=1` an owned value ends in ` @engine`, and the model's next token may no longer glue a letter, digit, `_`, `-` or `/` to it (`TF_RUNNER_MARK_STOP`, on by default): on Qwen3.8-Flash-Next TP1 the model wrote `@engineer` in 4 of 9 replies of a big-power set, and in one it went on to `@engineer-mike/secret-repo!` and a 1,024-digit run. A space, newline or punctuation after the mark lands as drawn, and a mark stop does not shorten the reply's later digit runs, so the model can still write a number of the same digits, a copy of the value included.

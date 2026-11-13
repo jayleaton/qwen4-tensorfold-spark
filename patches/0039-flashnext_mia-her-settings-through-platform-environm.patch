@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 15:09:45 +0700
-Subject: [PATCH 39/79] flashnext_mia: her settings through
+Subject: [PATCH 39/83] flashnext_mia: her settings through
  platform/environment.zig
 
 Every setting her engine reads (57 names, TF_FLASHNEXT_* plus
@@ -33,12 +33,12 @@ test's covered rows.
  create mode 100644 zig/src/families/flashnext_mia/cuda_env.zig
 
 diff --git a/docs/environment.md b/docs/environment.md
-index 1d7ccd8d8..08e4d6843 100644
+index d16943ec5..ec3788135 100644
 --- a/docs/environment.md
 +++ b/docs/environment.md
-@@ -60,6 +60,69 @@ Backend-specific settings are checked when that backend starts; slide settings r
- Common server settings are checked before checkpoint resolution, including when no request would use them yet.
- Direct family readers also refuse malformed values when called without the server.
+@@ -125,6 +125,69 @@ stops the start with the variable, the supplied text and the accepted forms.
+ An on-by-default switch keeps the same kernels and bits as off; only the launch count changes.
+ The two row counts and the two draft counts keep their existing clamps after parsing.
  
 +## MiaAI-Lab's Flash Next engine
 +
@@ -674,16 +674,16 @@ index 03026d400..6e9e1c2e9 100644
      }
  
 diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
-index 3d1dbaa45..d5c13cf48 100644
+index 3703f2372..d4eed197c 100644
 --- a/zig/src/platform/environment.zig
 +++ b/zig/src/platform/environment.zig
 @@ -3,8 +3,8 @@ const std = @import("std");
  const sys = @import("sys.zig");
  
  pub const Error = error{InvalidEnvironment};
--pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3 };
+-pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3, glm, flashnext };
 -pub const Kind = enum { u32, u64, size, percent, positive, device, segments, mib, bit_width, word, prompt, flag, toggle, real, positive_real, signed_real, range, path };
-+pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3, flashnext_mia };
++pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3, glm, flashnext, flashnext_mia };
 +pub const Kind = enum { u32, u64, size, percent, positive, device, segments, mib, bit_width, word, prompt, flag, toggle, real, positive_real, signed_real, range, path, list };
  pub const Rule = struct {
      name: [:0]const u8,
@@ -697,8 +697,8 @@ index 3d1dbaa45..d5c13cf48 100644
      words: []const []const u8 = &.{},
      /// A legacy name that is ignored, and so never refused, while its canonical name is set.
      alias_of: ?[:0]const u8 = null,
-@@ -48,6 +48,63 @@ pub const rules = [_]Rule{
-     .{ .name = "TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS", .scope = .cuda, .kind = .flag, .forms = "0 or 1" },
+@@ -52,6 +52,63 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_PROMPT_INTERMEDIATE", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (default 0)" },
      .{ .name = "TF_ROCE_GID_INDEX", .scope = .cuda, .kind = .u32, .forms = "a whole GID index from 0 to 2147483647" },
      .{ .name = "TF_FLASHNEXT_ENGINE", .scope = .cuda, .kind = .word, .trim = " ", .words = &.{ "upstream", "mia" }, .forms = "upstream or mia" },
 +    .{ .name = "TF_FLASHNEXT_DEPTH", .scope = .flashnext_mia, .kind = .size, .forms = "a whole draft count from 1 to the lane core's most (default 15)" },
@@ -761,7 +761,7 @@ index 3d1dbaa45..d5c13cf48 100644
      .{ .name = "TF_GEMMA4_CHUNK_SOLO", .scope = .gemma4, .kind = .size, .forms = "a solo prompt pass's rows, a multiple of 512 up to 4096" },
      .{ .name = "TF_DRAMA_PREFILL_ROWS", .scope = .drama3, .kind = .u32, .trim = " ", .forms = "whole prompt rows a chunk, 1 through 1024 (checked when a Drama 3 checkpoint opens)" },
      .{ .name = "TF_DRAMA_REFERENCE_CACHE", .scope = .drama3, .kind = .u32, .trim = " ", .forms = "kept reference states, 0 (off) through 16 (checked when a Drama 3 checkpoint opens)" },
-@@ -172,7 +229,23 @@ pub fn parse(name: []const u8, raw: ?[]const u8) Error!?u64 {
+@@ -225,7 +282,23 @@ pub fn parse(name: []const u8, raw: ?[]const u8) Error!?u64 {
          if (ch < 0x20 or ch == 0x7f) break true;
      } else false) error.InvalidEnvironment else 0;
      // a real travels as its f64 bits and a range as lo above hi; `value` and `range` decode them
@@ -786,7 +786,7 @@ index 3d1dbaa45..d5c13cf48 100644
      if (r.kind == .range) {
          var it = std.mem.splitScalar(u8, text, '-');
          const lo = std.fmt.parseInt(u32, it.next().?, 10) catch return error.InvalidEnvironment;
-@@ -243,7 +316,7 @@ pub fn check(name: [:0]const u8, raw: ?[]const u8) Error!void {
+@@ -296,7 +369,7 @@ pub fn check(name: [:0]const u8, raw: ?[]const u8) Error!void {
  
  /// One setting in its reader's type: a switch as bool, a real as a float, any other kind as its whole number.
  pub fn value(comptime T: type, name: [:0]const u8, raw: ?[]const u8, default: T) Error!T {
@@ -795,53 +795,53 @@ index 3d1dbaa45..d5c13cf48 100644
      return decode(T, (try checked(name, raw)) orelse return default);
  }
  
-@@ -303,6 +376,7 @@ pub const Flags = struct {
-     dsv41: bool = false,
-     gemma4: bool = false,
+@@ -358,6 +431,7 @@ pub const Flags = struct {
      drama3: bool = false,
+     glm: bool = false,
+     flashnext: bool = false,
 +    flashnext_mia: bool = false,
      device: ?u32 = null,
      segments: ?u32 = null,
      carveout: bool = false,
-@@ -318,6 +392,7 @@ pub const Flags = struct {
-             .dsv41 => f.dsv41,
-             .gemma4 => f.gemma4,
+@@ -375,6 +449,7 @@ pub const Flags = struct {
              .drama3 => f.drama3,
+             .glm => f.glm,
+             .flashnext => f.flashnext,
 +            .flashnext_mia => f.flashnext_mia,
          };
      }
  };
 diff --git a/zig/src/platform/environment_test.zig b/zig/src/platform/environment_test.zig
-index 50d31c66f..5f4b36c59 100644
+index aab423a84..5656e62c7 100644
 --- a/zig/src/platform/environment_test.zig
 +++ b/zig/src/platform/environment_test.zig
 @@ -3,7 +3,7 @@ const std = @import("std");
  const e = @import("environment.zig");
  const t = std.testing;
  const a = t.allocator;
--const all: e.Flags = .{ .cuda = true, .metal = true, .xpu = true, .slide = true, .hooks = true, .dsv41 = true, .gemma4 = true, .drama3 = true };
-+const all: e.Flags = .{ .cuda = true, .metal = true, .xpu = true, .slide = true, .hooks = true, .dsv41 = true, .gemma4 = true, .drama3 = true, .flashnext_mia = true };
+-const all: e.Flags = .{ .cuda = true, .metal = true, .xpu = true, .slide = true, .hooks = true, .dsv41 = true, .gemma4 = true, .drama3 = true, .glm = true, .flashnext = true };
++const all: e.Flags = .{ .cuda = true, .metal = true, .xpu = true, .slide = true, .hooks = true, .dsv41 = true, .gemma4 = true, .drama3 = true, .glm = true, .flashnext = true, .flashnext_mia = true };
  const Env = struct {
      name: []const u8,
      raw: ?[]const u8,
-@@ -62,6 +62,7 @@ const valid = [_]Case{
-     .{ .name = "TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS", .raw = "0", .n = 0 },
-     .{ .name = "TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS", .raw = "1", .n = 1 },
+@@ -68,6 +68,7 @@ const valid = [_]Case{
+     .{ .name = "TF_PROMPT_INTERMEDIATE", .raw = "0", .n = 0 },
+     .{ .name = "TF_PROMPT_INTERMEDIATE", .raw = "1", .n = 1 },
      .{ .name = "TF_ROCE_GID_INDEX", .raw = "2147483647", .n = 2147483647 },
 +    .{ .name = "TF_FLASHNEXT_ENGINE", .raw = "mia", .n = 1 },
      .{ .name = "TF_DRAMA_PREFILL_ROWS", .raw = " 128 ", .n = 128 },
      .{ .name = "TF_DRAMA_REFERENCE_CACHE", .raw = "0", .n = 0 },
-     .{ .name = "TF_GEMMA4_CHUNK_SOLO", .raw = "2048", .n = 2048 },
-@@ -99,6 +100,8 @@ test "environment: valid forms remain raw numbers before existing consumer clamp
+     .{ .name = "TF_FLASHNEXT_GROUPED_ROWS", .raw = "0", .n = 0 },
+@@ -120,6 +121,8 @@ test "environment: valid forms remain raw numbers before existing consumer clamp
          for ([_][]const u8{ "", " ", "\t \n" }) |raw| try t.expectEqual(@as(?u64, null), try e.parse(r.name, raw));
-         // the DeepSeek rows are each covered, with every kept form, by deepseek_v41/env_validate_test.zig
-         if (r.scope == .dsv41) continue;
+         // own scope tests: deepseek_v41/env_validate_test.zig, glm/cuda_env_test.zig, environment_flashnext_test.zig
+         if (r.scope == .dsv41 or r.scope == .glm or r.scope == .flashnext) continue;
 +        // MiaAI-Lab's engine's rows are covered by the flashnext_mia test below
 +        if (r.scope == .flashnext_mia) continue;
          var covered = false;
          for (valid) |c| if (std.mem.eql(u8, r.name, c.name)) {
              covered = true;
-@@ -265,3 +268,28 @@ test "environment: a legacy alias is checked only while its canonical name is un
+@@ -288,3 +291,28 @@ test "environment: a legacy alias is checked only while its canonical name is un
      for ([_][]const u8{ "", "0", "1" }) |canonical| try t.expect((try e.refusal(a, Alias{ .canonical = canonical }, .{ .dsv41 = true })) == null);
      try t.expect((try e.refusal(a, Alias{ .canonical = null }, .{})) == null);
  }

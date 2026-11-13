@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 19:38:17 +0700
-Subject: [PATCH 55/79] flashnext_mia: her bursts and shared budgets on by
+Subject: [PATCH 55/83] flashnext_mia: her bursts and shared budgets on by
  default, with host tests on her lanes
 
 Her facts turn on burst_split with burst_short 4096 (her store at db281878 kept and resumed

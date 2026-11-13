@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 15:10:41 +0700
-Subject: [PATCH 40/79] flashnext_mia: zig fmt
+Subject: [PATCH 40/83] flashnext_mia: zig fmt
 
 zig fmt on every Zig file the branch adds or changes: alignment, doubled
 blank lines, and the builtins it rewrites (@backingInt, @fromBackingInt).
@@ -157,10 +157,10 @@ index 2c65da13a..7d327a5e8 100644
              }
              const src: int4.Source = .{ .qweight = qw.bytes, .scales = sc.bytes, .n_full = nf, .k_full = kf };
 diff --git a/zig/src/platform/environment_test.zig b/zig/src/platform/environment_test.zig
-index 5f4b36c59..8fa77b058 100644
+index 5656e62c7..18ea995e2 100644
 --- a/zig/src/platform/environment_test.zig
 +++ b/zig/src/platform/environment_test.zig
-@@ -288,8 +288,8 @@ test "environment: MiaAI-Lab's engine's rows take 0 and her readers' own forms,
+@@ -311,8 +311,8 @@ test "environment: MiaAI-Lab's engine's rows take 0 and her readers' own forms,
          .{ .name = "TENSORFOLD_MEMORY_RESERVE_GIB", .raw = "10", .n = @bitCast(@as(f64, 10)) },
      }) |c| try t.expectEqual(@as(?u64, c.n), try e.parse(c.name, c.raw));
      for ([_][2][]const u8{

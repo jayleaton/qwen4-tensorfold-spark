@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 16:11:45 +0700
-Subject: [PATCH 22/79] server: TF_DSV41_COMPUTE_LANE_DEFAULT offers the
+Subject: [PATCH 22/83] server: TF_DSV41_COMPUTE_LANE_DEFAULT offers the
  built-in tool to every thinking chat that fits
 
 Ports the compute default from the dsv41 release line (e5172c4a2, 75d774470,
@@ -95,19 +95,19 @@ index 07e729e77..e535a4ae9 100644
      const c = (try parse(&.{
          .{ "TF_X", "1" },                          .{ "TF_X_WORKERS", "3" },    .{ "TF_X_MAX_MS", "2500" },
 diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
-index edd9ae50d..74fc67b17 100644
+index a4fbc4213..0f75d296b 100644
 --- a/zig/src/server/chat.zig
 +++ b/zig/src/server/chat.zig
-@@ -41,6 +41,8 @@ pub const Input = struct {
-     prompt_logprobs: ?u8 = null,
-     /// The client's own name for the grammar field (text.format, output_config.format); null on chat and completions.
-     format: ?[]const u8 = null,
+@@ -48,6 +48,8 @@ pub const Input = struct {
+     image_bytes: images.ByteLimits = .{},
+     /// With a known window, the reply may fill all the room the prompt leaves; max_tokens otherwise.
+     fill_room: bool = false,
 +    /// `tools` holds the compute default's own built-in tool (compute_turns.ownedByServer): its calls stay unseen.
 +    lane_own: bool = false,
  };
  
  /// A streamed piece: content text (a string) or a delta object (reasoning or tool calls).
-@@ -73,6 +75,7 @@ pub const Reply = struct {
+@@ -80,6 +82,7 @@ pub const Reply = struct {
      /// ``choices[0].prompt_logprobs`` (vLLM's form) for a request that asked; null otherwise.
      prompt_logprobs: ?Value = null,
      loop_stop: ?u32 = null, // the loop period when --loop-guard-stop ended the reply in its reasoning
@@ -115,7 +115,7 @@ index edd9ae50d..74fc67b17 100644
  };
  
  pub const Failure = error{ Refused, Cancelled, Failed, OutOfMemory };
-@@ -263,7 +266,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+@@ -272,7 +275,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
      preparing = false;
      var filter: @import("compute_turns.zig").Filter = .{ .a = a, .inner = if (sink) |x| x else undefined };
      const shown: ?Sink = if (request.hold_eos and sink != null) filter.sink() else sink; // built-in calls stay hidden
@@ -124,7 +124,7 @@ index edd9ae50d..74fc67b17 100644
      defer srv.noteRequest(prepared.prompt_len, cached_tokens.within(box.cached, prepared.prompt_len), gen.collected.items.len, box.stats.drafted, box.stats.accepted, box.stats.rounds, received, gen.first_ns, gen.last_ns, box.stats.prefill_seconds, if (box.stats.prefill_seconds != null) box.stats.queued_seconds else null);
      errdefer if (!gen.engine_done) gen.cancel(); // the engine writes to the mailbox until it says finished
      const result: Failure!Reply = blk: {
-@@ -273,7 +276,9 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+@@ -282,7 +285,9 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
          if (gen.held) break :blk @import("compute_segments.zig").rest(&gen, cx, prepared, &filter, gone);
          break :blk gen.finish(cx, prepared.prompt_len, received, prepared.thinking, prepared.reasoning, effort, prepared.sampled, prepared.drafts);
      };
@@ -899,10 +899,10 @@ index 7f8076467..e2d9811d8 100644
  pub fn isBuiltInCall(call: Value) bool {
      return std.mem.eql(u8, toolName(call), name);
 diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
-index 3aaa19d91..2543d1ecc 100644
+index b293b6cf8..8dcc97352 100644
 --- a/zig/src/server/openai.zig
 +++ b/zig/src/server/openai.zig
-@@ -132,13 +132,6 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u8, c
+@@ -135,13 +135,6 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
      const logprobs = if (is_chat) try fields.probabilityOptions(cx, body, exact_bytes) else try fields.legacyLogprobs(cx, body, exact_bytes);
      if (srv.config.request_log) |path| request_log.append(cx.a, path, body);
      var input: chat.Input = .{ .fields = undefined, .format = format };
@@ -916,7 +916,7 @@ index 3aaa19d91..2543d1ecc 100644
      // ``body.get("max_tokens") or body.get("max_completion_tokens")``: both are ints or None by now
      const first = body.get("max_tokens");
      const max = if (first != null and first.?.truthy()) first else body.get("max_completion_tokens");
-@@ -147,6 +140,13 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u8, c
+@@ -150,6 +143,13 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
          .null => null,
          else => 0,
      } else null;
@@ -953,10 +953,10 @@ index ad639ceba..f3ba6d21c 100644
          if (r.plan.policy.single or parsed.calls != null) reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
          return null;
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index 2c62ffd7d..b653c7cb5 100644
+index 96f9ebeb4..2a7702a40 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -206,6 +206,8 @@ test {
+@@ -230,6 +230,8 @@ test {
      _ = @import("compute_turns.zig");
      _ = @import("compute_segments.zig");
      _ = @import("compute_lane_http_test.zig");

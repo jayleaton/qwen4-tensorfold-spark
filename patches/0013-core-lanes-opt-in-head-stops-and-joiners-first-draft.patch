@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 14:42:03 +0700
-Subject: [PATCH 13/79] core lanes: opt-in head stops and joiners' first drafts
+Subject: [PATCH 13/83] core lanes: opt-in head stops and joiners' first drafts
  in one batch
 
 Two round-loop mechanisms MiaAI-Lab's Flash Next engine was tuned with, both off unless a family's
@@ -31,20 +31,20 @@ depth.zig stay within 600 lines.
  create mode 100644 zig/src/core/lanes/join_batch_test.zig
 
 diff --git a/zig/src/core/lanes/config.zig b/zig/src/core/lanes/config.zig
-index 4d13462c1..030ea73e7 100644
+index 5dd0a1fe0..88a8a09bb 100644
 --- a/zig/src/core/lanes/config.zig
 +++ b/zig/src/core/lanes/config.zig
-@@ -42,6 +42,9 @@ pub const Model = struct {
-     granted_depth: bool = false, // with draft_probabilities: every stream drafts its last grant plus a slack
+@@ -47,6 +47,9 @@ pub const Model = struct {
      draft_slack: u32 = 0, // drafts past a stream's last grant, short or not (0: the Constants' own)
      draft_streams: bool = false, // the head drafts every stream of a shared round in one batch
+     plain_streams: u32 = 0, // a shared round with this many streams or more drafts none (0: off)
 +    draft_stops: bool = false, // opt-in: the head stops each chain itself (a running product): ask the most drafts
 +    draft_stops_most: u32 = std.math.maxInt(u32), // ... while at most this many streams are live
 +    join_batch: bool = false, // opt-in: joiners' first drafts wait for the next round, in one batch (lanes/join_batch.zig)
      copy_first: bool = false, // a copy ahead takes the round: the head holds no drafts for it (a drafter's own pass)
      hold_costs: []const @import("hold_price.zig").HoldCost = &.{}, // a drafter's own hold pass, timed at load
      head_trees: bool = false, // the head drafts trees of lanes (DraftRequest.lanes) and holds them
-@@ -81,6 +84,9 @@ pub const Config = struct {
+@@ -87,6 +90,9 @@ pub const Config = struct {
      fill_floor: f64 = 0.35, // the share of grafted rows a stream must keep to go on reading its chain back every round
      draft_streams: bool,
      head_trees: bool,
@@ -54,8 +54,8 @@ index 4d13462c1..030ea73e7 100644
      /// a prompt in pieces leaves its last token as the pending row of its first shared round's window
      join_tail: bool = false,
      /// a round's pieces of several streams in one backend call (Backend.pieces), which may run them as one forward
-@@ -164,6 +170,9 @@ pub const Config = struct {
-             .granted_depth = m.granted_depth and m.draft_probabilities,
+@@ -172,6 +178,9 @@ pub const Config = struct {
+             .plain_streams = m.plain_streams,
              .draft_streams = m.draft_streams,
              .head_trees = m.head_trees,
 +            .head_stops = m.draft_stops,
@@ -65,20 +65,20 @@ index 4d13462c1..030ea73e7 100644
              .piece_runs = m.piece_runs,
              .join_drafts = m.join_drafts,
 diff --git a/zig/src/core/lanes/depth.zig b/zig/src/core/lanes/depth.zig
-index 2d04b218e..7c3ebaef6 100644
+index 258d86b17..f8b7049cf 100644
 --- a/zig/src/core/lanes/depth.zig
 +++ b/zig/src/core/lanes/depth.zig
-@@ -71,6 +71,9 @@ pub const Rule = struct {
-     node_probabilities: bool,
+@@ -58,6 +58,9 @@ pub const Rule = struct {
      granted_depth: bool = false, // node_probabilities: a stream drafts its last grant plus draft_slack, lone ones too
      confidence_floor: ?f64 = null,
+     plain_streams: u32 = 0, // a shared round with this many streams or more drafts none (0: off; a family's switch)
 +    head_stops: bool = false, // opt-in: the head stops each chain itself, so every ask is the room's most drafts
 +    head_stops_most: u32 = std.math.maxInt(u32), // ... while at most this many streams are live (`live`)
 +    live: usize = 0, // the engine's live streams, set at each step when head_stops is on (lanes/join_batch.zig)
      batch_rows: u32,
-     batched_heads: bool = false, // one batch drafts every stream of a shared round (its steps: the deepest stream's)
+     batched_heads: bool = false, // one batch drafts every stream of a shared round (steps: the deepest stream's)
      row_cost: @import("row_cost.zig").RowCost = .{}, // what a row costs past shared_costs here, under k.learn_rows
-@@ -156,11 +159,16 @@ pub const Rule = struct {
+@@ -143,11 +146,16 @@ pub const Rule = struct {
          return modeled;
      }
  
@@ -91,21 +91,21 @@ index 2d04b218e..7c3ebaef6 100644
      pub fn depth(r: *Rule, who: Who) !i64 {
          const most = @min(@as(i64, r.most_drafts), @max(1, who.draft_room - 1));
          if (most <= 0) return 0;
--        if (r.confidence_floor != null and !who.sampled) return most;
-+        if ((r.confidence_floor != null and !who.sampled) or r.stopsNow()) return most;
+-        if (r.confidence_floor != null and !who.sampled and !r.k.floor_rates) return most;
++        if ((r.confidence_floor != null and !who.sampled and !r.k.floor_rates) or r.stopsNow()) return most;
          const p = try r.rates(who);
          if (r.family_costs.empty()) {
              const want: i64 = if (p[0] < 0.8) 1 else if (p[0] < 0.9) 2 else 3;
-@@ -309,7 +317,7 @@ pub const Rule = struct {
- 
-     /// Head drafts for the streams of a shared round, sized by allocation over their chain chances.
+@@ -299,7 +307,7 @@ pub const Rule = struct {
      pub fn budgets(r: *Rule, whos: []Who, probe: Probe, sampled: bool, out: []i64) !void {
+         // drafts lose here: none asked, no head pass
+         if (r.plain_streams > 0 and whos.len >= r.plain_streams) return @memset(out, 0);
 -        if (r.confidence_floor != null) {
 +        if (r.confidence_floor != null or r.stopsNow()) {
              for (whos, out) |*w, *o| o.* = try r.headDepth(w, null, probe);
              return;
          }
-@@ -465,26 +473,6 @@ test "depth picks the most tokens a ms and probes deeper" {
+@@ -460,26 +468,6 @@ test "depth picks the most tokens a ms and probes deeper" {
      try std.testing.expectEqual(@as(i64, 3), try rule.depth(who));
  }
  
@@ -133,7 +133,7 @@ index 2d04b218e..7c3ebaef6 100644
      const gpa = std.testing.allocator;
      var shared: Table = .{};
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 018ae4a72..6a589ee7a 100644
+index ced3f315a..114f4a056 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -89,12 +89,7 @@ pub const Engine = struct {
@@ -380,10 +380,10 @@ index 000000000..2c5870d9d
 +    for (plain.tokens, joined.tokens) |p, j| try std.testing.expectEqualSlices(u32, &p, &j);
 +}
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index 54c20aef9..7804adf23 100644
+index 34073e2e6..b21b4de15 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -78,6 +78,8 @@ test {
+@@ -82,6 +82,8 @@ test {
      _ = @import("grammar_parallel_test.zig");
      _ = @import("pricing_test.zig");
      _ = @import("depth_probe_test.zig");
@@ -391,7 +391,7 @@ index 54c20aef9..7804adf23 100644
 +    _ = @import("join_batch_test.zig");
      _ = @import("proposal_external_test.zig");
      _ = @import("lone_costs_test.zig");
-     _ = @import("lone_backoff_test.zig");
+     _ = @import("depth_floor_test.zig");
 diff --git a/zig/src/core/lanes/open.zig b/zig/src/core/lanes/open.zig
 index 684ab6b10..8ba692d33 100644
 --- a/zig/src/core/lanes/open.zig

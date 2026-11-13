@@ -1,25 +1,9 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Fri, 13 Nov 2026 11:56:19 +0700
-Subject: [PATCH 79/79] runner: an inline span inside an open quotation is
+Subject: [PATCH 83/83] runner: an inline span inside an open quotation is
  quoted text, not a cell to own
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-The inline trigger fired on `7^222 =` while the model was quoting the request back ("write the line 7^222 =") and
-forced the exact value and its mark into the middle of the quotation. The model then read the value as the user's
-text, re-quoted it, glued words to the mark and in one reply ran on for 1,024 invented digits. On Qwen3.8-Flash-Next
-TP1 (MLX 4-bit, one Spark) the first owned span of 7 of 9 replies in a big-power set sat inside such a quotation.
-
-An inline `<expr> =` or `A mod M =` with an open quotation before it on its line (an odd number of `"`, or a `“`
-with no `”`) now abstains with the reason `quoted` (TF_RUNNER_INLINE_QUOTED, default 1; 0 restores the earlier
-trigger). Nothing is forced there and no digit stop is armed; the same expression on the model's own line, or after
-the quotation closes, is owned as before. runner_api.Abstain is unchanged: the reason is a runner-side hint, because
-the server's Decline mirrors Abstain by tag name.
-
-Tests: six new tests under `zig build test-inline-quoted-host` (quoted and curly-quoted requests abstain, closed
-quotations and the model's own lines are owned, the knob off restores the trigger, and two recorded TP1 replies).
 ---
  CHANGELOG.md                               |   2 +
  zig/build/lane_halt_host.zig               |   1 +
@@ -34,12 +18,12 @@ quotations and the model's own lines are owned, the knob off restores the trigge
  create mode 100644 zig/src/core/runner_inline_quoted_test.zig
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 640d58b5f..f7fbbba35 100644
+index 1a3f4433c..e5fac9254 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+@@ -348,6 +348,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
  
- ## Unreleased
+ - Tests: `zig build sessions-writes` drives the real DeepSeek-V4.1 session store and NVMe index with synthetic agent, chat and mixed loads, no model or GPU, and reports the bytes an enabled tier (`TF_DSV41_SESSION_DISK`) writes and reads back; a nightly Linux test checks its accounting against real files (#2660).
  
 +- In-model runner: an inline `<expr> =` or `A mod M =` that sits inside an open quotation on its line (an odd number of `"` before it, or a `“` with no `”`) is quoted text, and the runner no longer owns its value there (`TF_RUNNER_INLINE_QUOTED`, on by default; 0 restores the earlier trigger). The cell abstains, its abstain record giving the reason `quoted`, and the model's own continuation stands, so nothing is forced and no digit stop is armed. On Qwen3.8-Flash-Next TP1 (MLX 4-bit, one Spark) the model opens its reasoning by quoting the request; when the request itself contained `7^222 =` or `13^150 = <value>`, the runner wrote the 168 to 188 digit value and ` @engine` into the middle of that quotation. In a 9-reply big-power set the first owned span of 7 replies was such a quotation; the model then read the value as the user's text, glued `@engineer…` to the mark and in one reply ran on for 1,024 invented digits. The same expression on the model's own line, or after the quotation closes, is owned as before; of about 12,300 inline spans in 2,506 recorded TP2 replies, 17 sat in an open quotation.
 +
@@ -47,10 +31,10 @@ index 640d58b5f..f7fbbba35 100644
  
  - Server: Responses grows each output item in one buffer, and Kimi chat advances its native stream parser through new tokens, so a long reply retains memory in proportion to its length while every reply and streamed event stays the same (#2642).
 diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
-index 521a1fe6f..f8c86025d 100644
+index 4bbc8fa2b..209c60dd7 100644
 --- a/zig/build/lane_halt_host.zig
 +++ b/zig/build/lane_halt_host.zig
-@@ -24,6 +24,7 @@ pub fn steps(b: *std.Build) void {
+@@ -26,6 +26,7 @@ pub fn steps(b: *std.Build) void {
      const digit_stop = b.step("test-digit-stop-host", "The runner's digit stop after owned inline values: its rules, the fake target's rounds, sessions");
      digit_stop.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"runner digit stop"} })).step);
      digit_stop.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner digit stop"} })).step);

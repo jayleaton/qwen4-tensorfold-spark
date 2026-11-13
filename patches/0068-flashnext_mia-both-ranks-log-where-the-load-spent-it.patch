@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 12:44:22 +0700
-Subject: [PATCH 68/79] flashnext_mia: both ranks log where the load spent its
+Subject: [PATCH 68/83] flashnext_mia: both ranks log where the load spent its
  time
 
 Engine.init's stages (config, kernels, weights, buffers, forward, exchange, page drop, memory) timed and printed in

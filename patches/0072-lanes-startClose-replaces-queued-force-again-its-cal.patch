@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 17:30:16 +0700
-Subject: [PATCH 72/79] lanes: startClose replaces queued force again (its
+Subject: [PATCH 72/83] lanes: startClose replaces queued force again (its
  callers cut with none queued); only resumed_rows is kept
 
 commit storage: a failed explicit thinking close retains its forced suffix expects the close to replace a queued

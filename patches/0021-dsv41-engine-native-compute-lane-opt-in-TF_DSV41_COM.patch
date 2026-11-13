@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 03:17:34 +0700
-Subject: [PATCH 21/79] dsv41: engine-native compute lane (opt-in
+Subject: [PATCH 21/83] dsv41: engine-native compute lane (opt-in
  TF_DSV41_COMPUTE_LANE)
 
 A request that lists {"type": "code_interpreter"}, or offers the lane's own
@@ -77,22 +77,22 @@ the chat route, the filter, the definition) and test-lane-api-host.
  create mode 100644 zig/src/server/compute_turns.zig
 
 diff --git a/zig/build/cuda_server_host.zig b/zig/build/cuda_server_host.zig
-index ec58a14d9..c6634bb4b 100644
+index 50ae97e6a..810c783a6 100644
 --- a/zig/build/cuda_server_host.zig
 +++ b/zig/build/cuda_server_host.zig
-@@ -58,6 +58,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
-     b.step("test-http-limits-host", "Total HTTP read deadlines and connection admission without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"HTTP limits:"} })).step);
+@@ -68,6 +68,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
      b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
      b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     b.step("test-ocr-host", "OCR route readers, shared page steps and dialects without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"ocr "} })).step);
 +    b.step("test-compute-lane-http-host", "The compute lane through the chat route: a held python call's result forced in").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"compute lane:"} })).step);
      b.step("test-request-deadline-host", "deadline_s: the server ends a reply at its deadline with usage and ids").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"request deadline:"} })).step);
      const server_test = b.addRunArtifact(b.addTest(.{ .root_module = server_tests }));
      @import("request_starts_host.zig").steps(b, native_modules.engines, server_tests);
 diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
-index 9220a26ed..07f1802da 100644
+index c155f97de..23c2e0f2f 100644
 --- a/zig/build/lane_halt_host.zig
 +++ b/zig/build/lane_halt_host.zig
-@@ -14,6 +14,9 @@ pub fn steps(b: *std.Build) void {
+@@ -16,6 +16,9 @@ pub fn steps(b: *std.Build) void {
      b.step("test-rows-prefetch-host", "Disk states read ahead for queued requests: equality, cancellation, fallbacks").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefetch:"} })).step);
      b.step("test-embedding-lane-host", "Prompt-only embedding jobs on the actual lane worker without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"embedding lane:"} })).step);
      b.step("test-prefill-service-host", "The opt-in prompt-row budget beside decoding streams on the lane host with a fake backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefill service:"} })).step);
@@ -117,7 +117,7 @@ index 84796dfc2..99f71458c 100644
  
  pub const Config = struct {
 diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
-index 27e955133..aa74a15ae 100644
+index 8ea652757..3419f68c4 100644
 --- a/zig/src/core/engine_api.zig
 +++ b/zig/src/core/engine_api.zig
 @@ -16,7 +16,7 @@ pub const EmbeddingBatch = lanes.embedding.Batch;
@@ -137,7 +137,7 @@ index 27e955133..aa74a15ae 100644
  
      /// The prompt as the prompt cache matches it: an image request's placeholders stand for their images.
      pub fn cacheKey(r: *const Request) []const u32 {
-@@ -231,6 +232,7 @@ pub const Info = struct {
+@@ -234,6 +235,7 @@ pub const Info = struct {
      admit: ?Admit = null,
      /// A byte budget each request promises its caches from as it is admitted (null: none); never beside `admit`.
      ledger: ?Ledger = null,
@@ -145,7 +145,7 @@ index 27e955133..aa74a15ae 100644
  
      pub const Capability = @import("engine_capabilities.zig").Capability;
  
-@@ -450,6 +452,7 @@ pub const Engine = struct {
+@@ -440,6 +442,7 @@ pub const Engine = struct {
          load: ?*const fn (ctx: *anyopaque, producer: ?load_ledger.Producer) void = null,
          /// Asked once per whole request: the returned message is the refusal, up to `refusal_bytes`; null: accepted.
          refusal: ?*const fn (ctx: *anyopaque, request: *const Request, out: []u8) ?[]const u8 = null,
@@ -153,7 +153,7 @@ index 27e955133..aa74a15ae 100644
      };
  
      pub fn info(e: Engine) Info {
-@@ -536,30 +539,9 @@ pub const Engine = struct {
+@@ -526,30 +529,9 @@ pub const Engine = struct {
      }
  };
  
@@ -242,7 +242,7 @@ index 000000000..b366f5cb1
 +    prefill_yield: ?*const fn (ctx: *anyopaque) bool = null,
 +};
 diff --git a/zig/src/core/lane_host.zig b/zig/src/core/lane_host.zig
-index 2f55f03af..f29c517ec 100644
+index d883f1d8a..7d7a35aba 100644
 --- a/zig/src/core/lane_host.zig
 +++ b/zig/src/core/lane_host.zig
 @@ -10,6 +10,7 @@ const fill = @import("lane_host_fill.zig");
@@ -261,7 +261,7 @@ index 2f55f03af..f29c517ec 100644
      closing: bool = false,
      stale: bool = false, // the learner's last step: a put-back has not reached the device, so replies are refused
      /// `halt`'s reason: what is left finishes failed with it (null: a stop cancels what is left)
-@@ -141,6 +143,7 @@ pub const LaneHost = struct {
+@@ -144,6 +146,7 @@ pub const LaneHost = struct {
          h.admitted.deinit(h.gpa);
          h.filling.deinit(h.gpa);
          h.cancels.deinit(h.gpa);
@@ -269,7 +269,7 @@ index 2f55f03af..f29c517ec 100644
          h.decoded.deinit(h.gpa);
          h.live_tokens.deinit(h.gpa);
          h.pieces.deinit(h.gpa);
-@@ -161,6 +164,7 @@ pub const LaneHost = struct {
+@@ -164,6 +167,7 @@ pub const LaneHost = struct {
          .info = infoFn,
          .submit = submitFn,
          .cancel = cancelFn,
@@ -277,7 +277,7 @@ index 2f55f03af..f29c517ec 100644
          .status = status.read,
          .memory = memoryFn,
          .keepalive = keepaliveFn,
-@@ -508,6 +512,7 @@ pub const LaneHost = struct {
+@@ -513,6 +517,7 @@ pub const LaneHost = struct {
              var activity = @import("lane_activity.zig").Activity.enter(h.activity);
              defer activity.end();
              ends.takeCancels(h);
@@ -285,7 +285,7 @@ index 2f55f03af..f29c517ec 100644
              pressure.step(h);
              rows_host.answer(h);
              scoring.answer(h);
-@@ -532,7 +537,7 @@ pub const LaneHost = struct {
+@@ -537,7 +542,7 @@ pub const LaneHost = struct {
                  ends.closeAll(h);
                  continue;
              }
@@ -591,7 +591,7 @@ index 5db725cad..65fdd63cd 100644
          rows_host.answer(h);
          @import("lane_host_score.zig").answer(h);
 diff --git a/zig/src/core/lane_stream.zig b/zig/src/core/lane_stream.zig
-index 279ab9795..dcbab2ffb 100644
+index 1bb925b1a..19f936d97 100644
 --- a/zig/src/core/lane_stream.zig
 +++ b/zig/src/core/lane_stream.zig
 @@ -72,6 +72,7 @@ pub fn open(h: *LaneHost, job: *Job) bool {
@@ -603,7 +603,7 @@ index 279ab9795..dcbab2ffb 100644
          freeProposer(h, job);
          recalls.release(job);
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 6a589ee7a..4672256d5 100644
+index 114f4a056..db3f8bc1a 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -419,7 +419,7 @@ pub const Engine = struct {
@@ -838,10 +838,10 @@ index 000000000..bf6e65341
 +    try std.testing.expectEqual(hold.Outcome.not_held, try hold.resumeHeld(&s, gpa, &suffix, false));
 +}
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index 7804adf23..8a25ca9fb 100644
+index b21b4de15..75a4d44f3 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -35,6 +35,7 @@ pub const shared_drafts = @import("shared_drafts.zig");
+@@ -36,6 +36,7 @@ pub const shared_drafts = @import("shared_drafts.zig");
  pub const row_cost = @import("row_cost.zig");
  pub const trail = @import("trail.zig");
  pub const engine = @import("engine.zig");
@@ -849,7 +849,7 @@ index 7804adf23..8a25ca9fb 100644
  pub const fake = @import("fake.zig");
  pub const shared_head_cost_check = @import("shared_head_cost_check.zig");
  pub const shared_draft_check = @import("shared_draft_check.zig");
-@@ -64,6 +65,7 @@ test {
+@@ -67,6 +68,7 @@ test {
      _ = @import("long_loop_test.zig");
      _ = @import("loop_stop_test.zig");
      _ = @import("handover_test.zig");
@@ -1000,10 +1000,10 @@ index 8c39822a3..14c45167d 100644
                  s.reason = .stop;
              } else if (fire) |period| {
 diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
-index 0ec70eef6..9990a4552 100644
+index 44bd8e81b..741a44528 100644
 --- a/zig/src/families/deepseek_v41/serve_engine.zig
 +++ b/zig/src/families/deepseek_v41/serve_engine.zig
-@@ -131,6 +131,8 @@ pub const Served = struct {
+@@ -148,6 +148,8 @@ pub const Served = struct {
          const window: u32 = @intCast(@min(context orelse m.f.opts.limit, m.f.opts.limit));
          s.host = api.LaneHost.init(gpa, io, &s.core, .{ .benchmark_ranks = m.session.nccl.size, .benchmark_group = m.benchmark_group, .name = "dsv41-cuda", .lanes = m.slots, .context_window = window, .prefill_step = m.gt.prefill_rows });
          s.host.info_.draft_sources = draftSources(m.pass != null, s.cfg.max_copy > 0);
@@ -1012,7 +1012,7 @@ index 0ec70eef6..9990a4552 100644
          // the lanes run on LaneHost's thread: the model's CUDA context must be current there
          s.host.on_thread = .{ .ctx = m, .run = bindContext };
          // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
-@@ -300,7 +302,7 @@ pub const Recorder = struct {
+@@ -305,7 +307,7 @@ pub const Recorder = struct {
  
      pub fn engine(r: *Recorder) api.Engine {
          if (r.path == null) return r.inner;
@@ -1021,7 +1021,7 @@ index 0ec70eef6..9990a4552 100644
      }
  
      fn self(ctx: *anyopaque) *Recorder {
-@@ -312,6 +314,9 @@ pub const Recorder = struct {
+@@ -317,6 +319,9 @@ pub const Recorder = struct {
      fn cancel(ctx: *anyopaque, id: api.Id) void {
          self(ctx).inner.cancel(id);
      }
@@ -1032,10 +1032,10 @@ index 0ec70eef6..9990a4552 100644
          self(ctx).inner.status(out, stream_tokens);
      }
 diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
-index 773e455b7..edd9ae50d 100644
+index 8fd0fae9f..a4fbc4213 100644
 --- a/zig/src/server/chat.zig
 +++ b/zig/src/server/chat.zig
-@@ -210,6 +210,8 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
+@@ -219,6 +219,8 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
      }
      if (input.logprobs) |count| request.logprobs = try @import("logprobs.zig").admit(srv, cx, reasoning, request.think_budget, count);
      request.prompt_logprobs = input.prompt_logprobs;
@@ -1044,7 +1044,7 @@ index 773e455b7..edd9ae50d 100644
      if (try engine_refusal.of(srv.engine, cx, &request)) |message| return cx.refuse(message);
      const deadline: ?i96 = if (f.get("deadline_s")) |v| blk: {
          const s = (if (v == .bool) null else v.float64()) orelse return cx.refuse("deadline_s must be a number of seconds");
-@@ -259,13 +261,16 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+@@ -268,13 +270,16 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
      };
      srv.release(preparing, null); // a background request waits only while a foreground one prepares
      preparing = false;
@@ -1842,10 +1842,10 @@ index 000000000..7f8076467
 +    try std.testing.expect(!isBuiltIn(other));
 +}
 diff --git a/zig/src/server/main.zig b/zig/src/server/main.zig
-index 74f078d82..3f35fc953 100644
+index 337e536c1..6734e5c59 100644
 --- a/zig/src/server/main.zig
 +++ b/zig/src/server/main.zig
-@@ -54,6 +54,8 @@ pub fn main(init: std.process.Init) !u8 {
+@@ -56,6 +56,8 @@ pub fn main(init: std.process.Init) !u8 {
      const a = init.arena.allocator();
      const argv = try init.minimal.args.toSlice(a);
      if (comptime @import("builtin").os.tag != .windows) if (argv.len == 2 and std.mem.eql(u8, argv[1], pdf_worker.arg)) pdf_worker.serve();
@@ -1855,10 +1855,10 @@ index 74f078d82..3f35fc953 100644
      if (argv.len == 2 and std.mem.eql(u8, argv[1], "--version")) {
          try std.Io.File.stdout().writeStreamingAll(io, "tensorfold-native " ++ @import("build_options").version ++ "\n");
 diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
-index 9acfc5462..3aaa19d91 100644
+index f05ec8949..b293b6cf8 100644
 --- a/zig/src/server/openai.zig
 +++ b/zig/src/server/openai.zig
-@@ -134,7 +134,7 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u8, c
+@@ -137,7 +137,7 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
      var input: chat.Input = .{ .fields = undefined, .format = format };
      if (is_chat) {
          input.messages = try messages.normalizeWith(cx, body.get("messages"), "system", srv.needs_user_after_tool, srv.media());
@@ -1868,10 +1868,10 @@ index 9acfc5462..3aaa19d91 100644
          input.messages = try messages.normalizeWith(cx, m, "system", srv.needs_user_after_tool, srv.media());
      };
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index bbadedfd3..2c62ffd7d 100644
+index 55c50ae88..96f9ebeb4 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -203,6 +203,9 @@ test {
+@@ -227,6 +227,9 @@ test {
      _ = @import("cortheon/research.zig");
      _ = @import("cortheon/program.zig");
      _ = @import("recall_routes.zig");
@@ -1882,10 +1882,10 @@ index bbadedfd3..2c62ffd7d 100644
      if (comptime @import("builtin").os.tag != .windows) {
          _ = @import("benchmark_suite.zig");
 diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
-index c0b97638f..ebc1cefae 100644
+index 820d65562..464b83efd 100644
 --- a/zig/src/server/server.zig
 +++ b/zig/src/server/server.zig
-@@ -163,6 +163,8 @@ pub const Server = struct {
+@@ -172,6 +172,8 @@ pub const Server = struct {
      keepalive: ?*api.keepalive.Keepalive = null,
      /// The idle-unload manager (--idle-unload); null when off. Its thread parks the engine; a wake reloads it.
      idle_manager: ?*idle_unload.Manager = null,
@@ -1894,7 +1894,7 @@ index c0b97638f..ebc1cefae 100644
      preparing: std.atomic.Value(i64) = .init(0),
      speech_inflight: std.atomic.Value(u32) = .init(0),
      arena: std.heap.ArenaAllocator,
-@@ -208,6 +210,7 @@ pub const Server = struct {
+@@ -217,6 +219,7 @@ pub const Server = struct {
              if (config.cortheon) return error.CortheonRequiresTextGeneration;
              return srv;
          }

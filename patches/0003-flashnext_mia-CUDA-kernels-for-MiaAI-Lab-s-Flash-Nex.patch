@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:57:30 +0300
-Subject: [PATCH 03/79] flashnext_mia: CUDA kernels for MiaAI-Lab's Flash Next
+Subject: [PATCH 03/83] flashnext_mia: CUDA kernels for MiaAI-Lab's Flash Next
  engine
 
 Her engine's device code: copies of the Python qwen4_exp extensions' kernels (GDN decode, prefill and tree,

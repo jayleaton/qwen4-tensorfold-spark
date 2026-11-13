@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 04:12:01 +0700
-Subject: [PATCH 36/79] lanes: a held reply's result rows land whole, their EOS
+Subject: [PATCH 36/83] lanes: a held reply's result rows land whole, their EOS
  neither holds nor ends it
 
 ChatML templates (Qwen3.x, Qwen3.8-Flash-Next) close the tool-result turn with <|im_end|>,

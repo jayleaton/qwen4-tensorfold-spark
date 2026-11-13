@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:57:30 +0300
-Subject: [PATCH 06/79] flashnext_mia: the engine, its forward, MTP heads and
+Subject: [PATCH 06/83] flashnext_mia: the engine, its forward, MTP heads and
  the tensorfold CLI commands
 
 Her Flash Next engine itself: the decode and prompt forwards over the NVFP4, FP8 and GPTQ int4 weights,

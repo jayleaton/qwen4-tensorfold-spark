@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 13:48:36 +0700
-Subject: [PATCH 01/79] notices: MiaAI-Lab's dual-Spark recipe license, notice
+Subject: [PATCH 01/83] notices: MiaAI-Lab's dual-Spark recipe license, notice
  and credits
 
 The license, NOTICE and CREDITS of MiaAI-Lab/Qwen3.8-Flash-Dual-DGX-Sparks-TensorFold (dc05c912342e, Apache-2.0)
@@ -419,10 +419,10 @@ index 000000000..c9df311f2
 +
 +See CREDITS.md for everyone this project builds on.
 diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
-index c894ea02b..f4c867319 100644
+index 7a7210779..c8f2c9161 100644
 --- a/THIRD_PARTY_NOTICES.md
 +++ b/THIRD_PARTY_NOTICES.md
-@@ -459,6 +459,19 @@ recipe commit e1f564eb915bb5272474b6c1c527aec3b9ed3de6. It credits TensorFold Co
+@@ -458,6 +458,19 @@ recipe commit e1f564eb915bb5272474b6c1c527aec3b9ed3de6. It credits TensorFold Co
  arithmetic and staging design. Copyright (c) 2026 MiaAI-Lab and Copyright (c) 2026 TensorFold contributors.
  The complete original MIT notices and permission text are retained in [Mia-FlashNext-MIT.txt](LICENSES/Mia-FlashNext-MIT.txt).
  

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 19:21:24 +0700
-Subject: [PATCH 31/79] flashnext: bind the compute lane in its family, boot it
+Subject: [PATCH 31/83] flashnext: bind the compute lane in its family, boot it
  on the CUDA host
 
 Flash-Next's binding (generic TF_COMPUTE_LANE*, the python tool) moves from
@@ -104,7 +104,7 @@ index 000000000..619ec284c
 +    try std.testing.expectEqual(@as(i64, 1024), binding.tool.min_tokens);
 +}
 diff --git a/zig/src/families/flashnext/cuda_lanes.zig b/zig/src/families/flashnext/cuda_lanes.zig
-index ee6c4ff3d..056eb51dc 100644
+index 1aaf22148..91af5d76b 100644
 --- a/zig/src/families/flashnext/cuda_lanes.zig
 +++ b/zig/src/families/flashnext/cuda_lanes.zig
 @@ -27,6 +27,7 @@ pub fn Namespace(comptime Tri: type) type {
@@ -116,10 +116,10 @@ index ee6c4ff3d..056eb51dc 100644
          pub const default_context: i64 = @intCast(prompt.max_tokens);
          // a prompt runs on the batched pass in chunks of this many rows, one a prefill_step: no staggered segments
 diff --git a/zig/src/families/flashnext/cuda_launch.zig b/zig/src/families/flashnext/cuda_launch.zig
-index 8fb1e343d..2503121f1 100644
+index 061d30ddf..2c93fbaa2 100644
 --- a/zig/src/families/flashnext/cuda_launch.zig
 +++ b/zig/src/families/flashnext/cuda_launch.zig
-@@ -481,6 +481,7 @@ test {
+@@ -487,6 +487,7 @@ test {
      _ = pocket;
      _ = train;
      _ = @import("living.zig");
@@ -128,16 +128,16 @@ index 8fb1e343d..2503121f1 100644
  
  test "embed grid is one program per row and per group of 32" {
 diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
-index b49624635..8848bc3a2 100644
+index f4d76d3e1..5c9f94379 100644
 --- a/zig/src/native/cuda.zig
 +++ b/zig/src/native/cuda.zig
-@@ -465,6 +465,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+@@ -474,6 +474,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
          .slide_conversations = conversations,
          .readouts = readouts,
          .text_generation = readouts == null, // a readout engine answers its readouts only (Clef's /v1/systemone)
 +        .compute = if (@hasDecl(F, "compute")) try F.compute.parse(&cuda_device.knob) else null, // replies hold at EOS
 +        .compute_tool = if (@hasDecl(F, "compute")) F.compute.tool else .{},
-     }, .{ .ctx = loaded.ctx, .text = F.explain });
+     }), .{ .ctx = loaded.ctx, .text = F.explain });
      opened = true;
      kv_pages.warnCapacity(cache_capacity, o.keep == 0 or o.prompt_cache_gib == 0 or share, if (paged) |p| p.taken else 0, std.log); // TF_KV_SHARE: no copied rows
 diff --git a/zig/src/native/cuda_device.zig b/zig/src/native/cuda_device.zig

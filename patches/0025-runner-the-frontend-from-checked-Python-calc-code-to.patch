@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 17:29:33 +0700
-Subject: [PATCH 25/79] runner: the frontend from checked Python/calc code to
+Subject: [PATCH 25/83] runner: the frontend from checked Python/calc code to
  calc firmware or a circuit ELF
 
 Second slice of the in-thinking runner port, from the DSV41
@@ -185,10 +185,10 @@ module compiles for macOS (its Linux syscalls stay behind the posix_spawn check)
  create mode 100644 zig/src/core/runner_frontend_value.zig
 
 diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
-index 3c9347b22..7391e4154 100644
+index 115bef628..0664b99a0 100644
 --- a/zig/build/cuda.zig
 +++ b/zig/build/cuda.zig
-@@ -207,6 +207,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+@@ -209,6 +209,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
      step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/build/check_fatbins.zig"), .target = host }) })).step);
      @import("compute_lane_host.zig").steps(b, host, step);
      @import("runner_t2.zig").tests(b, step);

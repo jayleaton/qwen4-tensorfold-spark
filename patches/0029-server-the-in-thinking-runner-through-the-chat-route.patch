@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 19:19:07 +0700
-Subject: [PATCH 29/79] server: the in-thinking runner through the chat route,
+Subject: [PATCH 29/83] server: the in-thinking runner through the chat route,
  on C3's owned span
 
 The server side of the in-model runner (slice 5 of C4), on top of C3
@@ -66,22 +66,22 @@ index 000000000..5b54d5403
 @@ -0,0 +1 @@
 +Exact computation is available. Write the full expression inline as `<expr> =`, or a Python fenced cell with `print(<expr>)` followed by a `Result:` header. The exact value will follow. Request the whole computation early; wait for the result instead of working digits, loops, carries or long division by hand. Unsupported requests leave your own continuation.
 diff --git a/zig/build/cuda_server_host.zig b/zig/build/cuda_server_host.zig
-index c6634bb4b..9d81f82b2 100644
+index 810c783a6..f8445b66b 100644
 --- a/zig/build/cuda_server_host.zig
 +++ b/zig/build/cuda_server_host.zig
-@@ -59,6 +59,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
-     b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
+@@ -69,6 +69,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
      b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     b.step("test-ocr-host", "OCR route readers, shared page steps and dialects without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"ocr "} })).step);
      b.step("test-compute-lane-http-host", "The compute lane through the chat route: a held python call's result forced in").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"compute lane:"} })).step);
 +    b.step("test-runner-server-host", "The in-model runner through the chat route: guide, live records, field anchors").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "runner guide:", "runner commit ask:", "runner projection:", "runner live records:" } })).step);
      b.step("test-request-deadline-host", "deadline_s: the server ends a reply at its deadline with usage and ids").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"request deadline:"} })).step);
      const server_test = b.addRunArtifact(b.addTest(.{ .root_module = server_tests }));
      @import("request_starts_host.zig").steps(b, native_modules.engines, server_tests);
 diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
-index af8c6b9cf..72921c99d 100644
+index 93d1fc1fd..81a125d02 100644
 --- a/zig/src/families/deepseek_v41/serve_engine.zig
 +++ b/zig/src/families/deepseek_v41/serve_engine.zig
-@@ -135,6 +135,13 @@ pub const Served = struct {
+@@ -152,6 +152,13 @@ pub const Served = struct {
          const binding = api.hold.compute_lane.bindings.dsv41;
          s.host.info_.compute = try binding.parse(&@import("serve_knobs.zig").env);
          s.host.info_.compute_tool = binding.tool;
@@ -95,7 +95,7 @@ index af8c6b9cf..72921c99d 100644
          // the lanes run on LaneHost's thread: the model's CUDA context must be current there
          s.host.on_thread = .{ .ctx = m, .run = bindContext };
          // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
-@@ -193,6 +200,17 @@ pub const Served = struct {
+@@ -198,6 +205,17 @@ pub const Served = struct {
          return .{ .active = u.device, .cache = 0, .peak = u.peak };
      }
  
@@ -114,10 +114,10 @@ index af8c6b9cf..72921c99d 100644
          const m: *model.Model = @ptrCast(@alignCast(ctx));
          try m.ctx.makeCurrent();
 diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
-index 4b21c46b5..a544c6b18 100644
+index 7a55209c8..0457b4857 100644
 --- a/zig/src/server/chat.zig
 +++ b/zig/src/server/chat.zig
-@@ -75,6 +75,7 @@ pub const Reply = struct {
+@@ -82,6 +82,7 @@ pub const Reply = struct {
      /// ``choices[0].prompt_logprobs`` (vLLM's form) for a request that asked; null otherwise.
      prompt_logprobs: ?Value = null,
      loop_stop: ?u32 = null, // the loop period when --loop-guard-stop ended the reply in its reasoning
@@ -125,14 +125,15 @@ index 4b21c46b5..a544c6b18 100644
      compute_ran: usize = 0, // the lane's built-in calls the sandbox ran (not malformed or past the cap)
      owned: ?@import("reply_owned.zig").Owned = null, // engine-owned bytes of `content`, which no strip may cut
  };
-@@ -128,14 +129,24 @@ pub const Prepared = struct {
+@@ -135,6 +136,7 @@ pub const Prepared = struct {
      sampled: bool, // a sampling config, which the reply labels "exact"; greedy otherwise
      drafts: bool,
      token_ids: bool,
 +    guide: ?[]const u8 = null, // the runner guide the chat got ("" none); null with the runner off
      stops: fields_mod.Stops,
      preparing: bool,
-     deadline_ns: ?i96 = null, // "deadline_s": the server ends the reply there itself (finish_reason "deadline")
+     frames: []const ?api.Size = &.{}, // each image part's tower input size, in part order (prompt.Rendered.frames)
+@@ -142,8 +144,17 @@ pub const Prepared = struct {
  };
  
  /// Render ``input`` and run every check that can refuse it, before anything reaches the client or the engine.
@@ -151,7 +152,7 @@ index 4b21c46b5..a544c6b18 100644
      const io = srv.io;
      const received = nowNs(io);
      const f = input.fields;
-@@ -216,13 +227,19 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
+@@ -225,13 +236,19 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
      request.prompt_logprobs = input.prompt_logprobs;
      // the compute lane: a reply offered the built-in tool holds at each EOS for its results (not with stop strings)
      request.hold_eos = stops_opt.strings.len == 0 and @import("compute_turns.zig").arms(srv, input, &request);
@@ -167,12 +168,12 @@ index 4b21c46b5..a544c6b18 100644
          if (!(s > 0 and s <= 1e6)) return cx.refuse("deadline_s must be more than 0 and at most 1000000 seconds");
          break :blk received + @as(i96, @intFromFloat(s * std.time.ns_per_s));
      } else null;
--    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .reasoning = reasoning, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .deadline_ns = deadline };
-+    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .reasoning = reasoning, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .guide = guided.guide, .deadline_ns = deadline };
+-    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .reasoning = reasoning, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .frames = rendered.frames, .deadline_ns = deadline };
++    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .reasoning = reasoning, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .frames = rendered.frames, .guide = guided.guide, .deadline_ns = deadline };
  }
  
  /// Submit a prepared request and collect its reply; ``sink`` hears the stream (null: not streamed).
-@@ -267,7 +284,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+@@ -276,7 +293,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
      preparing = false;
      var filter: @import("compute_turns.zig").Filter = .{ .a = a, .inner = if (sink) |x| x else undefined, .tool = srv.info.compute_tool.name };
      const shown: ?Sink = if (request.hold_eos and sink != null) filter.sink() else sink; // built-in calls stay hidden
@@ -430,10 +431,10 @@ index c8507d93f..23d78a9d5 100644
      }
  };
 diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
-index 2543d1ecc..35716b856 100644
+index 8dcc97352..e52467379 100644
 --- a/zig/src/server/openai.zig
 +++ b/zig/src/server/openai.zig
-@@ -151,7 +151,7 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u8, c
+@@ -154,7 +154,7 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
          input.temperature = if (t == .float) t.float else std.fmt.parseFloat(f64, t.int) catch 0;
      };
      const sampling = try json.newObject(cx.a);
@@ -442,7 +443,7 @@ index 2543d1ecc..35716b856 100644
      try grammar.refusal(cx, body);
      if (input.tools.len > 0 and try tool_specs.choiceRequiresCall(cx.a, body.get("tool_choice"))) try sampling.put(cx.a, "tool_call_required", .{ .bool = true });
      if (body.field("parallel_tool_calls")) |p| if (p == .bool and !p.bool) try sampling.put(cx.a, "tool_call_single", .{ .bool = true });
-@@ -270,6 +270,7 @@ const Run = struct {
+@@ -273,6 +273,7 @@ const Run = struct {
      prose_sent: std.ArrayList(u8) = .empty, // the content a tool stream sent
      text_offset: usize = 0, // characters a completion stream's logprob rows have covered
      turn: ?*cortheon.Turn = null, // --cortheon's work on this request
@@ -450,7 +451,7 @@ index 2543d1ecc..35716b856 100644
      call_ids: ids.Calls, // the reply's tool-call ids, from this request (openai_calls.zig)
  
      fn chunk(r: *Run, delta: ?Value, finish: ?[]const u8) Allocator.Error!Value {
-@@ -279,6 +280,7 @@ const Run = struct {
+@@ -282,6 +283,7 @@ const Run = struct {
          try o.put(a, "object", .{ .string = if (r.is_chat) "chat.completion.chunk" else "text_completion" });
          try o.put(a, "created", try json.intValue(a, r.created));
          try o.put(a, "model", .{ .string = r.plan.named });
@@ -458,7 +459,7 @@ index 2543d1ecc..35716b856 100644
          const choice = try json.newObject(a);
          try choice.put(a, "index", .{ .int = "0" });
          if (r.is_chat) {
-@@ -301,7 +303,7 @@ const Run = struct {
+@@ -304,7 +306,7 @@ const Run = struct {
      }
  
      fn emit(r: *Run, payload: Value) error{Closed}!void {
@@ -467,7 +468,7 @@ index 2543d1ecc..35716b856 100644
      }
  
      fn usage(r: *Run, reply: *const chat.Reply) Allocator.Error!Value {
-@@ -324,7 +326,7 @@ const Run = struct {
+@@ -327,7 +329,7 @@ const Run = struct {
          try o.put(r.a, "exact_mode", .{ .string = "exact" });
          if (reply.stop_sequence) |s| try o.put(r.a, "stop_sequence", .{ .string = s });
          if (r.srv.config.spark_stats) try @import("spark_wire.zig").add(r.a, reply);
@@ -476,7 +477,7 @@ index 2543d1ecc..35716b856 100644
          try o.put(r.a, "speculative", reply.speculative);
          if (r.turn) |t| try o.put(r.a, "cortheon", try t.summary(r.a));
      }
-@@ -445,7 +447,7 @@ const Run = struct {
+@@ -448,7 +450,7 @@ const Run = struct {
              if (!s.opened) return s.pending.append(r.a, delta) catch error.Closed;
              if (!s.tools) {
                  // completions stream text only, with its logprob rows when asked
@@ -486,22 +487,22 @@ index 2543d1ecc..35716b856 100644
              }
              @import("openai_calls.zig").streamed(r, delta) catch return error.Closed;
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index ca77cf5d5..48cdc1116 100644
+index 70f250284..e3002a805 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -35,6 +35,8 @@ test {
-     _ = @import("readout_service_test.zig");
+@@ -38,6 +38,8 @@ test {
      _ = @import("http_limits_test.zig");
+     _ = @import("env_defaults_test.zig");
      _ = @import("done_times_test.zig");
 +    _ = @import("runner_live_test.zig");
 +    _ = @import("runner_projection_http_test.zig");
      _ = @import("request_deadline_test.zig");
      _ = @import("request_deadline_http_test.zig");
      _ = @import("drain_test.zig");
-@@ -43,6 +45,10 @@ test {
-     _ = @import("idle_unload_test.zig");
-     _ = @import("wait_reason_test.zig");
-     _ = @import("name_priority_http_test.zig");
+@@ -53,6 +55,10 @@ test {
+     _ = @import("responses_ws_events.zig");
+     _ = @import("responses_ws_turn.zig");
+     _ = @import("responses_ws_test.zig");
 +    _ = @import("runner_guide.zig");
 +    _ = @import("runner_commit_ask.zig");
 +    _ = @import("runner_text.zig");
@@ -1767,10 +1768,10 @@ index 000000000..a35a9bf20
 +    };
 +}
 diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
-index ebc1cefae..971b39a59 100644
+index 464b83efd..320e3a9c1 100644
 --- a/zig/src/server/server.zig
 +++ b/zig/src/server/server.zig
-@@ -136,6 +136,7 @@ pub const Server = struct {
+@@ -141,6 +141,7 @@ pub const Server = struct {
      text: model_text.Text,
      config: Config,
      voices: []const @import("drama_voice.zig").Voice = &.{},
@@ -1778,7 +1779,7 @@ index ebc1cefae..971b39a59 100644
      keys: ?*auth.Store,
      late_system: []const u8 = "system",
      needs_user_after_tool: bool = false,
-@@ -211,6 +212,14 @@ pub const Server = struct {
+@@ -220,6 +221,14 @@ pub const Server = struct {
              return srv;
          }
          if (srv.info.compute) |c| srv.compute = try @import("compute_turns.zig").open(srv, c);
@@ -1794,7 +1795,7 @@ index ebc1cefae..971b39a59 100644
          if (config.keep_warm_s > 0) if (engine.keepaliveTarget()) |target| {
              srv.keepalive = api.keepalive.Keepalive.start(gpa, io, target, @as(i64, config.keep_warm_s) * std.time.ns_per_s) catch |e| blk: {
 diff --git a/zig/src/server/tool_parse.zig b/zig/src/server/tool_parse.zig
-index dcbfa7dab..218d792db 100644
+index f6b00bce3..4979bc728 100644
 --- a/zig/src/server/tool_parse.zig
 +++ b/zig/src/server/tool_parse.zig
 @@ -19,7 +19,7 @@ pub const wrapCalls = tool_streaming.wrapCalls;

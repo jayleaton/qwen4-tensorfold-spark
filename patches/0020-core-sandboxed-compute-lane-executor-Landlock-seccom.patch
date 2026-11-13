@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 03:17:27 +0700
-Subject: [PATCH 20/79] core: sandboxed compute lane executor (Landlock +
+Subject: [PATCH 20/83] core: sandboxed compute lane executor (Landlock +
  seccomp)
 
 The executor the compute lane runs a model's Python call in. Nothing uses it
@@ -70,10 +70,10 @@ index 000000000..e3fde6fb0
 +    step.dependOn(&run.step);
 +}
 diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
-index a33d4aa5e..95f0e6b2f 100644
+index b9fd64bf1..5a4e9b2a6 100644
 --- a/zig/build/cuda.zig
 +++ b/zig/build/cuda.zig
-@@ -205,6 +205,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+@@ -207,6 +207,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
      @import("runtime_libraries.zig").tests(b, step);
      const host = b.graph.host;
      step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/build/check_fatbins.zig"), .target = host }) })).step);

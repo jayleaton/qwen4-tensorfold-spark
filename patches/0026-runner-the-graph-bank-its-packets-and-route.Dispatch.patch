@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 17:31:00 +0700
-Subject: [PATCH 26/79] runner: the graph bank, its packets and route.Dispatch
+Subject: [PATCH 26/83] runner: the graph bank, its packets and route.Dispatch
 
 Third slice of the in-thinking runner port, from the DSV41
 release branch (7b79ef92d) unchanged except for names: runner_graph*.zig loads
@@ -89,10 +89,10 @@ names a bank. Model-independent; nothing in the engine imports it yet.
  create mode 100644 zig/src/core/steps_v1/runner_circuit_state.zig
 
 diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
-index 7391e4154..85124912e 100644
+index 0664b99a0..90e7c2eb1 100644
 --- a/zig/build/cuda.zig
 +++ b/zig/build/cuda.zig
-@@ -208,6 +208,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+@@ -210,6 +210,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
      @import("compute_lane_host.zig").steps(b, host, step);
      @import("runner_t2.zig").tests(b, step);
      @import("runner_frontend.zig").tests(b, step);

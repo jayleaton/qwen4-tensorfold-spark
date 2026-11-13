@@ -1,0 +1,285 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 18:23:38 +0700
+Subject: [PATCH 77/83] lean: lane_host, native/cuda and server under 600 lines
+ on current main
+
+Upstream grew all three files to 591-600 lines, so the lanes' additions pushed them past
+600. Moved out: a CUDA family's runner, compute lane and call gates on its Info
+(native/cuda_lane_info.zig), the server's compute lane and runner at start
+(server/server_lanes.zig), the queue-phase test (server/server_queue_phase_test.zig);
+the lane host's held results and runner sessions take one call (lane_host_runner.step).
+Nothing else changes.
+---
+ zig/src/core/lane_host.zig                 |  6 ++--
+ zig/src/core/lane_host_runner.zig          |  6 ++++
+ zig/src/core/lane_rounds.zig               |  3 +-
+ zig/src/native/cuda.zig                    | 16 ++-------
+ zig/src/native/cuda_lane_info.zig          | 19 +++++++++++
+ zig/src/server/root.zig                    |  1 +
+ zig/src/server/server.zig                  | 39 ++--------------------
+ zig/src/server/server_lanes.zig            | 24 +++++++++++++
+ zig/src/server/server_queue_phase_test.zig | 22 ++++++++++++
+ 9 files changed, 81 insertions(+), 55 deletions(-)
+ create mode 100644 zig/src/native/cuda_lane_info.zig
+ create mode 100644 zig/src/server/server_lanes.zig
+ create mode 100644 zig/src/server/server_queue_phase_test.zig
+
+diff --git a/zig/src/core/lane_host.zig b/zig/src/core/lane_host.zig
+index 4edf5dba6..0db22a419 100644
+--- a/zig/src/core/lane_host.zig
++++ b/zig/src/core/lane_host.zig
+@@ -323,8 +323,7 @@ pub const LaneHost = struct {
+         const stats: Stats = if (job.started) .{ .rounds = s.rounds, .grammar = if (s.grammar_time.windows > 0) s.grammar_time else null, .drafted = s.drafted, .accepted = s.accepted, .min_rows = s.min_rows, .prefill_widths = s.prefill_widths.items, .loop_period = s.loop_period, .gpu_seconds = s.gpu_seconds, .prefill_seconds = if (job.prefilled) |done| @as(f64, @floatFromInt(@as(i64, @intCast(@max(0, done - job.began))))) / 1e9 else null } else .{};
+         var told = if (job.started) recalls.finished(h, job, reason, stats) else stats;
+         told.queued_seconds = if (job.admitted_ns) |at| @as(f64, @floatFromInt(@max(0, at - job.submitted))) / 1e9 else 0;
+-        const summary = if (job.runner) |rs| rs.receipt() else ""; // the session's buffer: freed with it, after the emit
+-        emit(job, .{ .finished = .{ .reason = reason, .stats = told, .message = message, .runner = summary } });
++        emit(job, .{ .finished = .{ .reason = reason, .stats = told, .message = message, .runner = if (job.runner) |rs| rs.receipt() else "" } });
+         if (job.started) {
+             if (s.grammar) |g| g.deinit(h.gpa);
+             s.deinit(h.gpa);
+@@ -522,8 +521,7 @@ pub const LaneHost = struct {
+             var activity = @import("lane_activity.zig").Activity.enter(h.activity);
+             defer activity.end();
+             ends.takeCancels(h);
+-            holds.take(h);
+-            @import("lane_host_runner.zig").tick(h);
++            @import("lane_host_runner.zig").step(h);
+             pressure.step(h);
+             rows_host.answer(h);
+             scoring.answer(h);
+diff --git a/zig/src/core/lane_host_runner.zig b/zig/src/core/lane_host_runner.zig
+index dd2fee8fe..7b58f0265 100644
+--- a/zig/src/core/lane_host_runner.zig
++++ b/zig/src/core/lane_host_runner.zig
+@@ -3,6 +3,12 @@ const std = @import("std");
+ const lanes = @import("lanes");
+ const LaneHost = @import("lane_host.zig").LaneHost;
+ 
++/// A round's runner work: results for held replies land, then the runner sessions advance.
++pub fn step(h: *LaneHost) void {
++    @import("lane_host_hold.zig").take(h);
++    tick(h);
++}
++
+ /// Advances every started job's runner session; a settled result is forced after the trigger it waited at.
+ pub fn tick(h: *LaneHost) void {
+     if (h.runner == null) return;
+diff --git a/zig/src/core/lane_rounds.zig b/zig/src/core/lane_rounds.zig
+index 4b6ef90d7..114f4edf2 100644
+--- a/zig/src/core/lane_rounds.zig
++++ b/zig/src/core/lane_rounds.zig
+@@ -275,8 +275,7 @@ pub fn run(h: *LaneHost, rd: Rounds) void {
+         var activity = @import("lane_activity.zig").Activity.enter(h.activity);
+         defer activity.end();
+         ends.takeCancels(h);
+-        @import("lane_host_hold.zig").take(h);
+-        @import("lane_host_runner.zig").tick(h);
++        @import("lane_host_runner.zig").step(h);
+         pressure.step(h);
+         rows_host.answer(h);
+         @import("lane_host_score.zig").answer(h);
+diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
+index 28059cc88..5ffe2c217 100644
+--- a/zig/src/native/cuda.zig
++++ b/zig/src/native/cuda.zig
+@@ -450,13 +450,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+     h.kv_count = if (admit != null) kv_pages.ledgerPool(F, loaded) else null;
+     const bench = if (@hasDecl(F, "benchmark")) F.benchmark(loaded.ctx) else api.Benchmark{ .ranks = 1 };
+     const readouts: ?lanes.readout.Info = if (@hasField(@TypeOf(loaded), "readouts")) loaded.readouts else null;
+-    // TF_RUNNER*: the family's in-model runner, open for the engine's life; the server gives it the tokenizer
+-    const runner = if (@hasDecl(F, "runner")) if (try F.runner.parse(&cuda_device.knob)) |rc| try api.runner.open(gpa, rc) else null else null;
+-    if (runner != null) try F.runner.openRoundTrace(&cuda_device.knob);
+-    const compute = if (@hasDecl(F, "compute")) try F.compute.parse(&cuda_device.knob) else null; // replies hold at EOS
+-    // TF_COMPUTE_LANE_RUNNER=1 (S3, off by default): lane calls the circuit can run go there, sharing its circuit
+-    const s3 = if (@hasDecl(F, "compute")) try api.compute_circuit.open(F.compute, gpa, &cuda_device.knob, compute != null, runner, null) else null;
+-    try h.serve(io, served.facts, loaded.rows, familyInfo(F, .{
++    try h.serve(io, served.facts, loaded.rows, try @import("cuda_lane_info.zig").with(F, gpa, familyInfo(F, .{
+         .benchmark_ranks = bench.ranks,
+         .benchmark_group = bench.group,
+         .lanes = streams,
+@@ -474,18 +468,13 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+         .prompt_logprobs = served.backend.vtable.prompt_rows,
+         .penalties = served.backend.penalties,
+         .structures = served.backend.vtable.first_masked != null,
+-        .call_gates = @hasDecl(F, "call_gates") and F.call_gates, // the lane core forces the call (lanes/call_gate.zig)
+         .vision = if (@hasField(@TypeOf(loaded), "vision")) vision_offer.offer(loaded.vision, o.vision) else null,
+         .admit = admit,
+         .ledger = @import("cuda_ledger.zig").info(if (h.kv_plan) |*p| p else null),
+         .slide_conversations = conversations,
+         .readouts = readouts,
+         .text_generation = readouts == null, // a readout engine answers its readouts only (Clef's /v1/systemone)
+-        .compute = compute,
+-        .compute_tool = if (@hasDecl(F, "compute")) F.compute.tool else .{},
+-        .runner = runner,
+-        .compute_runner = s3,
+-    }), .{ .ctx = loaded.ctx, .text = F.explain });
++    })), .{ .ctx = loaded.ctx, .text = F.explain });
+     opened = true;
+     kv_pages.warnCapacity(cache_capacity, o.keep == 0 or o.prompt_cache_gib == 0 or share, if (paged) |p| p.taken else 0, std.log); // TF_KV_SHARE: no copied rows
+     if (@hasField(@TypeOf(loaded), "follow")) if (loaded.follow) |f| {
+@@ -580,6 +569,7 @@ test {
+     _ = kv_pages;
+     _ = drafted;
+     _ = flashnext_mia; // MiaAI-Lab's family against the contract
++    _ = @import("cuda_lane_info.zig");
+     _ = cuda_disk; // its tests run under test-cuda-disk-open-host's filter
+     _ = @import("cuda_disk_identity_test.zig");
+ }
+diff --git a/zig/src/native/cuda_lane_info.zig b/zig/src/native/cuda_lane_info.zig
+new file mode 100644
+index 000000000..0a44d018c
+--- /dev/null
++++ b/zig/src/native/cuda_lane_info.zig
+@@ -0,0 +1,19 @@
++//! A CUDA family's in-model runner, compute lane and call gates on the Info it serves (TF_RUNNER*, TF_COMPUTE_LANE*).
++const std = @import("std");
++const api = @import("engine_api");
++const knob = &@import("cuda_device.zig").knob;
++
++/// `info` with what family F binds; the runner stays open for the engine's life (the server gives it the tokenizer).
++pub fn with(comptime F: type, gpa: std.mem.Allocator, info: api.Info) !api.Info {
++    var out = info;
++    const runner = if (@hasDecl(F, "runner")) if (try F.runner.parse(knob)) |rc| try api.runner.open(gpa, rc) else null else null;
++    if (runner != null) try F.runner.openRoundTrace(knob);
++    const compute = if (@hasDecl(F, "compute")) try F.compute.parse(knob) else null; // replies hold at EOS
++    // TF_COMPUTE_LANE_RUNNER=1 (S3, off by default): lane calls the circuit can run go there, sharing its circuit
++    out.compute_runner = if (@hasDecl(F, "compute")) try api.compute_circuit.open(F.compute, gpa, knob, compute != null, runner, null) else null;
++    out.compute = compute;
++    out.compute_tool = if (@hasDecl(F, "compute")) F.compute.tool else .{};
++    out.runner = runner;
++    out.call_gates = @hasDecl(F, "call_gates") and F.call_gates; // the lane core forces the call (lanes/call_gate.zig)
++    return out;
++}
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index 9fdbe23e4..143d93cba 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -18,6 +18,7 @@ pub const Config = server.Config;
+ 
+ test {
+     _ = @import("startup_receipt.zig");
++    _ = @import("server_queue_phase_test.zig");
+     _ = @import("kimi_prompt_test.zig");
+     _ = @import("kimi_text_test.zig");
+     _ = @import("kimi_reply_test.zig");
+diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
+index 8dfd61c51..d8ec7f9c6 100644
+--- a/zig/src/server/server.zig
++++ b/zig/src/server/server.zig
+@@ -173,10 +173,8 @@ pub const Server = struct {
+     keepalive: ?*api.keepalive.Keepalive = null,
+     /// The idle-unload manager (--idle-unload); null when off. Its thread parks the engine; a wake reloads it.
+     idle_manager: ?*idle_unload.Manager = null,
+-    /// The compute lane's sandboxes when the engine serves it (Info.compute); null: code_interpreter is refused.
+-    compute: ?api.hold.compute_lane.Pool = null,
+-    /// S3 (Info.compute_runner): built-in calls the circuit can run run there; null: every call goes to the sandbox.
+-    compute_exec: ?api.compute_circuit.Exec = null,
++    compute: ?api.hold.compute_lane.Pool = null, // the compute lane's sandboxes (Info.compute); null: no code_interpreter
++    compute_exec: ?api.compute_circuit.Exec = null, // S3 (Info.compute_runner): calls the circuit can run go there
+     preparing: std.atomic.Value(i64) = .init(0),
+     speech_inflight: std.atomic.Value(u32) = .init(0),
+     arena: std.heap.ArenaAllocator,
+@@ -222,22 +220,7 @@ pub const Server = struct {
+             if (config.cortheon) return error.CortheonRequiresTextGeneration;
+             return srv;
+         }
+-        if (srv.info.compute) |c| srv.compute = try @import("compute_turns.zig").open(srv, c);
+-        if (srv.compute != null) if (srv.info.compute_runner) |s| {
+-            srv.compute_exec = .init(s);
+-            std.log.info("compute lane: calls the circuit can run run there (in-model runner), the rest in the sandbox (code tool){s}", .{if (s.cfg.verify) "; verify: the sandbox's result is inserted" else ""});
+-        };
+-        if (srv.info.runner) |r| {
+-            try @import("runner_text.zig").attach(srv.arena.allocator(), text, r);
+-            srv.guides = try @import("runner_guide.zig").Set.load(srv.arena.allocator(), io, r.cfg.guide);
+-            srv.guides.max_request_bytes = r.cfg.guide_max_bytes;
+-            // the compute default (PREFIX_DEFAULT): the family's measured trust guide unless the boot names one
+-            if (srv.compute != null and srv.info.compute.?.default and srv.guides.default.len == 0) srv.guides.default = r.cfg.family.trust orelse blk: {
+-                std.log.warn("compute default: no trust guide is measured for this family; chats get none unless they ask", .{});
+-                break :blk "";
+-            };
+-            srv.guides.describe();
+-        }
++        try @import("server_lanes.zig").open(srv, io, text);
+         if (config.cortheon) srv.cortheon = try cortheon.State.init(gpa, io, "TensorFold-Cortheon (+https://github.com/ashhart/TensorFold)", config.cortheon_search_key);
+         if (config.keep_warm_s > 0) if (engine.keepaliveTarget()) |target| {
+             srv.keepalive = api.keepalive.Keepalive.start(gpa, io, target, @as(i64, config.keep_warm_s) * std.time.ns_per_s) catch |e| blk: {
+@@ -605,19 +588,3 @@ fn templateImages(srv: *Server) bool {
+ fn needsUserAfterTool(source: []const u8) bool {
+     return std.mem.indexOf(u8, source, "No user query found") != null;
+ }
+-
+-test "queue phase: server notes measured waits only when explicitly enabled" {
+-    const defaults: Config = .{ .served_name = "test", .model_ids = &.{"test"} };
+-    try std.testing.expect(!defaults.phase_metrics);
+-    for ([_]bool{ false, true }) |enabled| {
+-        var srv: Server = undefined;
+-        srv.io = std.testing.io;
+-        srv.metrics = .{ .gpa = std.testing.allocator, .phases = enabled };
+-        defer srv.metrics.deinit();
+-        srv.noteRequest(10, 0, 3, 0, 0, 2, clock.nowNs(srv.io), null, null, 0.25, 0.3);
+-        try std.testing.expectEqual(@as(u64, if (enabled) 1 else 0), srv.metrics.queue.n);
+-        srv.noteRequest(10, 0, 3, 0, 0, 2, clock.nowNs(srv.io), null, null, null, null);
+-        try std.testing.expectEqual(@as(u64, if (enabled) 1 else 0), srv.metrics.queue.n);
+-        try std.testing.expectEqual(@as(u64, 6), srv.metrics.generation);
+-    }
+-}
+diff --git a/zig/src/server/server_lanes.zig b/zig/src/server/server_lanes.zig
+new file mode 100644
+index 000000000..155844041
+--- /dev/null
++++ b/zig/src/server/server_lanes.zig
+@@ -0,0 +1,24 @@
++//! The server's compute lane and in-model runner at start: sandboxes, S3 and the runner's text and guides.
++const std = @import("std");
++const Server = @import("server.zig").Server;
++const model_text = @import("model_text.zig");
++
++/// Opens what the engine's Info serves: the compute lane's sandboxes, S3 beside them and the runner's guides.
++pub fn open(srv: *Server, io: std.Io, text: model_text.Text) !void {
++    if (srv.info.compute) |c| srv.compute = try @import("compute_turns.zig").open(srv, c);
++    if (srv.compute != null) if (srv.info.compute_runner) |s| {
++        srv.compute_exec = .init(s);
++        std.log.info("compute lane: calls the circuit can run run there (in-model runner), the rest in the sandbox (code tool){s}", .{if (s.cfg.verify) "; verify: the sandbox's result is inserted" else ""});
++    };
++    if (srv.info.runner) |r| {
++        try @import("runner_text.zig").attach(srv.arena.allocator(), text, r);
++        srv.guides = try @import("runner_guide.zig").Set.load(srv.arena.allocator(), io, r.cfg.guide);
++        srv.guides.max_request_bytes = r.cfg.guide_max_bytes;
++        // the compute default (PREFIX_DEFAULT): the family's measured trust guide unless the boot names one
++        if (srv.compute != null and srv.info.compute.?.default and srv.guides.default.len == 0) srv.guides.default = r.cfg.family.trust orelse blk: {
++            std.log.warn("compute default: no trust guide is measured for this family; chats get none unless they ask", .{});
++            break :blk "";
++        };
++        srv.guides.describe();
++    }
++}
+diff --git a/zig/src/server/server_queue_phase_test.zig b/zig/src/server/server_queue_phase_test.zig
+new file mode 100644
+index 000000000..fb6938f1f
+--- /dev/null
++++ b/zig/src/server/server_queue_phase_test.zig
+@@ -0,0 +1,22 @@
++//! The server's queue-phase metrics: noted only when explicitly enabled.
++const std = @import("std");
++const server = @import("server.zig");
++const clock = @import("clock.zig");
++const Config = server.Config;
++const Server = server.Server;
++
++test "queue phase: server notes measured waits only when explicitly enabled" {
++    const defaults: Config = .{ .served_name = "test", .model_ids = &.{"test"} };
++    try std.testing.expect(!defaults.phase_metrics);
++    for ([_]bool{ false, true }) |enabled| {
++        var srv: Server = undefined;
++        srv.io = std.testing.io;
++        srv.metrics = .{ .gpa = std.testing.allocator, .phases = enabled };
++        defer srv.metrics.deinit();
++        srv.noteRequest(10, 0, 3, 0, 0, 2, clock.nowNs(srv.io), null, null, 0.25, 0.3);
++        try std.testing.expectEqual(@as(u64, if (enabled) 1 else 0), srv.metrics.queue.n);
++        srv.noteRequest(10, 0, 3, 0, 0, 2, clock.nowNs(srv.io), null, null, null, null);
++        try std.testing.expectEqual(@as(u64, if (enabled) 1 else 0), srv.metrics.queue.n);
++        try std.testing.expectEqual(@as(u64, 6), srv.metrics.generation);
++    }
++}

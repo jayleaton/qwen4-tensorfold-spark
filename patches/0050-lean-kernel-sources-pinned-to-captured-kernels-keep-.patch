@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 15:34:14 +0700
-Subject: [PATCH 50/79] lean: kernel sources pinned to captured kernels keep
+Subject: [PATCH 50/83] lean: kernel sources pinned to captured kernels keep
  their comments; a documentation address in a rank test
 
 Her Triton sources (triton/kv8.py, triton/prompt_mm.py) must stay byte-identical to the sources her captured kernel set hashes, so lean_check checks only their length. The rank-1 settings test uses 192.0.2.1 (TEST-NET-1) for the master address.

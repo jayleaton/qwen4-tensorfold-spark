@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 11:34:06 +0200
-Subject: [PATCH 12/79] flashnext_mia: rank 0 publishes a long batch's record
+Subject: [PATCH 12/83] flashnext_mia: rank 0 publishes a long batch's record
  before writing the batch
 
 Rank 0 publishes a long batch's record before it writes the batch on the control link (MiaAI-Lab issue #3:

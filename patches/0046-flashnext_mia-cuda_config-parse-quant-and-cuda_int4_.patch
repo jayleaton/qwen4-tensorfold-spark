@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 15:31:34 +0700
-Subject: [PATCH 46/79] flashnext_mia: cuda_config (parse, quant) and
+Subject: [PATCH 46/83] flashnext_mia: cuda_config (parse, quant) and
  cuda_int4_check (dev) split
 
 Pure code motion under 600 lines: declarations moved whole, moved methods aliased in their struct, pub where another file now calls them.

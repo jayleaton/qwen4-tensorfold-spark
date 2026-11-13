@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 19:33:46 +0700
-Subject: [PATCH 30/79] lanes: runner rounds: drafts past a forced tail,
+Subject: [PATCH 30/83] lanes: runner rounds: drafts past a forced tail,
  settled fires, the round trace
 
 The rounds side of the in-model runner (slice 6 of C4).
@@ -47,10 +47,10 @@ Ported from the dsv41 release line (s86 7b79ef92d).
  create mode 100644 zig/src/core/lanes/settle_fire_test.zig
 
 diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
-index 6b2f4de9c..32b30caa5 100644
+index 919950528..0a0f9dd43 100644
 --- a/zig/build/lane_halt_host.zig
 +++ b/zig/build/lane_halt_host.zig
-@@ -18,6 +18,7 @@ pub fn steps(b: *std.Build) void {
+@@ -20,6 +20,7 @@ pub fn steps(b: *std.Build) void {
      hold.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"compute hold:"} })).step);
      hold.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"compute hold:"} })).step);
      b.step("test-runner-abstain-host", "Abstain records: each abstained cell's source, reason and decision point").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner abstain records:"} })).step);
@@ -71,7 +71,7 @@ index 48e2c8ffa..bda839563 100644
  
      pub fn rows(w: Window) usize {
 diff --git a/zig/src/core/lanes/config.zig b/zig/src/core/lanes/config.zig
-index 030ea73e7..d09b00858 100644
+index 88a8a09bb..6f99d9fb4 100644
 --- a/zig/src/core/lanes/config.zig
 +++ b/zig/src/core/lanes/config.zig
 @@ -25,6 +25,7 @@ pub const Model = struct {
@@ -82,7 +82,7 @@ index 030ea73e7..d09b00858 100644
      draft_prior: []const f64 = &.{}, // the head's acceptance by depth until a stream has its own
      depth_rate: f64 = 0, // the newest round's weight in a depth's acceptance estimate (0: the core's)
      plain_guard: bool = false, // plain rounds compete with drafted depths
-@@ -70,6 +71,7 @@ pub const Config = struct {
+@@ -75,6 +76,7 @@ pub const Config = struct {
      base_width: u32,
      family_mtp: bool,
      speculate_early: bool,
@@ -90,7 +90,7 @@ index 030ea73e7..d09b00858 100644
      pipelined: bool,
      plain_guard: bool,
      most_drafts: u32,
-@@ -159,6 +161,7 @@ pub const Config = struct {
+@@ -166,6 +168,7 @@ pub const Config = struct {
              .base_width = @min(width, first_copy + 1),
              .family_mtp = m.mtp and width >= 2 and m.speculate,
              .speculate_early = m.speculate_early and !(m.root_copies and m.copy_drafts),
@@ -99,7 +99,7 @@ index 030ea73e7..d09b00858 100644
              .plain_guard = m.plain_guard,
              .most_drafts = @min(m.drafts, @min(width - 1, max_draft)),
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 4672256d5..3fa73406e 100644
+index db3f8bc1a..e933d290c 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -113,6 +113,7 @@ pub const Engine = struct {
@@ -427,10 +427,10 @@ index 000000000..da6362d3c
 +    return path;
 +}
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index 8a25ca9fb..2ba4d5a86 100644
+index 75a4d44f3..5f71e1aad 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -36,6 +36,7 @@ pub const row_cost = @import("row_cost.zig");
+@@ -37,6 +37,7 @@ pub const row_cost = @import("row_cost.zig");
  pub const trail = @import("trail.zig");
  pub const engine = @import("engine.zig");
  pub const hold = @import("hold.zig");
@@ -438,7 +438,7 @@ index 8a25ca9fb..2ba4d5a86 100644
  pub const fake = @import("fake.zig");
  pub const shared_head_cost_check = @import("shared_head_cost_check.zig");
  pub const shared_draft_check = @import("shared_draft_check.zig");
-@@ -66,6 +67,9 @@ test {
+@@ -69,6 +70,9 @@ test {
      _ = @import("loop_stop_test.zig");
      _ = @import("handover_test.zig");
      _ = @import("hold_test.zig");
@@ -916,7 +916,7 @@ index 000000000..fe95c0f35
 +    }
 +}
 diff --git a/zig/src/core/lanes/windows.zig b/zig/src/core/lanes/windows.zig
-index 47c9c82f5..a4452b3f3 100644
+index 0d93234bf..7b722cc19 100644
 --- a/zig/src/core/lanes/windows.zig
 +++ b/zig/src/core/lanes/windows.zig
 @@ -73,6 +73,7 @@ pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {
@@ -927,7 +927,7 @@ index 47c9c82f5..a4452b3f3 100644
      } else {
          var copy: Copy = .{};
          if (copied) |c| copy = c else if (s.drafts) copy = try copyProposal(e, s);
-@@ -514,7 +515,7 @@ pub fn build(e: *Engine, p: Plan, early: bool) !be.Window {
+@@ -523,7 +524,7 @@ pub fn build(e: *Engine, p: Plan, early: bool) !be.Window {
      const ds = try accept.depths(a, parents);
      const positions = try a.alloc(u64, rows);
      for (positions, ds) |*x, d| x.* = p.position + 1 + d;
@@ -991,23 +991,23 @@ index 4aff00824..00ee987d9 100644
 +    try t.expect(!@import("lanes").round_trace.on());
 +}
 diff --git a/zig/src/families/deepseek_v41/draft/lanes.zig b/zig/src/families/deepseek_v41/draft/lanes.zig
-index 2f875c971..4e944c179 100644
+index 70d176a06..d16b71006 100644
 --- a/zig/src/families/deepseek_v41/draft/lanes.zig
 +++ b/zig/src/families/deepseek_v41/draft/lanes.zig
 @@ -119,7 +119,7 @@ pub const Lanes = struct {
          for (window, 0..) |*w, i| w.* = .{ .width = @intCast(i + 1), .ms = v[i] };
          const shared = try arena.alloc(lanes.config.Cost, @min(v.len, batch_rows));
          for (shared, 0..) |*w, i| w.* = .{ .width = @intCast(i + 1), .ms = v[i] };
--        return .{ .exact_width = costs_mod.slot_rows, .mtp = true, .speculate = true, .speculate_early = false, .drafts = x.opts.shape.block, .window_costs = window, .mtp_step_ms = 0.0, .hidden_rows = true, .batch_rows = batch_rows, .max_streams = x.opts.slots, .shared_costs = shared, .draft_probabilities = true, .draft_streams = true, .join_tail = x.target.vtable.tail != null and try joinTail(), .piece_runs = try envOn("TF_DSV41_PIECE_RUNS"), .join_drafts = try envOn("TF_DSV41_JOIN_DRAFTS"), .replay_runs = try envOn("TF_DSV41_REPLAY_RUNS") };
-+        return .{ .exact_width = costs_mod.slot_rows, .mtp = true, .speculate = true, .speculate_early = false, .drafts = x.opts.shape.block, .window_costs = window, .mtp_step_ms = 0.0, .hidden_rows = true, .batch_rows = batch_rows, .max_streams = x.opts.slots, .shared_costs = shared, .draft_probabilities = true, .draft_streams = true, .join_tail = x.target.vtable.tail != null and try joinTail(), .piece_runs = try envOn("TF_DSV41_PIECE_RUNS"), .join_drafts = try envOn("TF_DSV41_JOIN_DRAFTS"), .replay_runs = try envOn("TF_DSV41_REPLAY_RUNS"), .forced_drafts = !try envOn("TF_DSV41_NO_FORCED_DRAFTS") };
+-        return .{ .exact_width = costs_mod.slot_rows, .mtp = true, .speculate = true, .speculate_early = false, .drafts = x.opts.shape.block, .window_costs = window, .mtp_step_ms = 0.0, .hidden_rows = true, .batch_rows = batch_rows, .max_streams = x.opts.slots, .shared_costs = shared, .draft_probabilities = true, .draft_streams = true, .plain_streams = @intCast(x.opts.depth.plain_streams), .join_tail = x.target.vtable.tail != null and try joinTail(), .piece_runs = try envOn("TF_DSV41_PIECE_RUNS"), .join_drafts = try envOn("TF_DSV41_JOIN_DRAFTS"), .replay_runs = try envOn("TF_DSV41_REPLAY_RUNS") };
++        return .{ .exact_width = costs_mod.slot_rows, .mtp = true, .speculate = true, .speculate_early = false, .drafts = x.opts.shape.block, .window_costs = window, .mtp_step_ms = 0.0, .hidden_rows = true, .batch_rows = batch_rows, .max_streams = x.opts.slots, .shared_costs = shared, .draft_probabilities = true, .draft_streams = true, .plain_streams = @intCast(x.opts.depth.plain_streams), .join_tail = x.target.vtable.tail != null and try joinTail(), .piece_runs = try envOn("TF_DSV41_PIECE_RUNS"), .join_drafts = try envOn("TF_DSV41_JOIN_DRAFTS"), .replay_runs = try envOn("TF_DSV41_REPLAY_RUNS"), .forced_drafts = !try envOn("TF_DSV41_NO_FORCED_DRAFTS") };
      }
  
      /// TF_DSV41_TAIL_JOIN=1: a prompt in pieces leaves its last token to its first round's shared window (default off).
 diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
-index 72921c99d..0af4dde9f 100644
+index 81a125d02..305300f92 100644
 --- a/zig/src/families/deepseek_v41/serve_engine.zig
 +++ b/zig/src/families/deepseek_v41/serve_engine.zig
-@@ -141,6 +141,7 @@ pub const Served = struct {
+@@ -158,6 +158,7 @@ pub const Served = struct {
              rc.place.engine = engineCpus; // PREFIX_CPUS=auto keeps the runner's threads off these
              s.host.runner = try api.runner.open(gpa, rc);
              s.host.info_.runner = s.host.runner;

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 01:40:10 +0700
-Subject: [PATCH 35/79] compute lane: a ChatML turn close after the held EOS
+Subject: [PATCH 35/83] compute lane: a ChatML turn close after the held EOS
  goes in with the result turn
 
 Qwen templates (Qwen3.x, Qwen3.8-Flash-Next) close every turn with
@@ -145,10 +145,10 @@ index 7d2cea983..ab572884c 100644
  
  fn lost(e: anyerror) chat.Failure!?[]const u32 {
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index 48cdc1116..fc8786d47 100644
+index e3002a805..7acce8d6e 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -212,6 +212,7 @@ test {
+@@ -236,6 +236,7 @@ test {
      _ = @import("compute_turns.zig");
      _ = @import("compute_segments.zig");
      _ = @import("compute_lane_http_test.zig");

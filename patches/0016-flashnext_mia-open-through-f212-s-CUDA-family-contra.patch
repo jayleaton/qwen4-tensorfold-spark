@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 14:42:16 +0700
-Subject: [PATCH 16/79] flashnext_mia: open through f212's CUDA family contract
+Subject: [PATCH 16/83] flashnext_mia: open through f212's CUDA family contract
 
 TF_FLASHNEXT_ENGINE=mia now opens her family with native/cuda.zig's openWith, as every registry
 family opens, instead of her own host:
@@ -237,19 +237,19 @@ index f20517aef..cea621e9e 100644
      try std.testing.expect(!std.mem.eql(u8, a, f8));
      try std.testing.expect(std.mem.indexOf(u8, f8, "kv=fp8") != null);
 diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
-index 1c41e2435..b49624635 100644
+index 1b4ac345e..f4d76d3e1 100644
 --- a/zig/src/native/cuda.zig
 +++ b/zig/src/native/cuda.zig
-@@ -165,7 +165,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
-     if (std.mem.eql(u8, o.model_type, "fish_omni")) return openDrama(a, gpa, io, o, problem);
+@@ -166,7 +166,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
      if (std.mem.eql(u8, o.model_type, "qwen4") or std.mem.eql(u8, o.model_type, "qwen4_text")) return @import("qwen4_cuda.zig").open(a, gpa, io, o, problem);
+     if (std.mem.eql(u8, o.model_type, "qwen3")) return @import("cuda_qwen3.zig").open(a, gpa, io, o, problem, budget, windows);
      // MiaAI-Lab's Flash Next engine also reads qwen4_exp: TF_FLASHNEXT_ENGINE=mia picks it over upstream's flashnext
 -    if (flashnext_mia.wanted(o)) return flashnext_mia.open(a, gpa, io, o, problem);
 +    if (flashnext_mia.wanted(o)) return openWith(flashnext_mia.family, a, gpa, io, o, problem);
      inline for (registry) |F| if (std.mem.eql(u8, o.model_type, F.model_type)) return openWith(F, a, gpa, io, o, problem);
      if (std.mem.eql(u8, o.model_type, lfm2.family.model_type)) {
          if (refusals.lfm2(o)) |why| {
-@@ -527,6 +527,7 @@ test {
+@@ -568,6 +568,7 @@ test {
      _ = @import("cuda_ledger.zig");
      _ = kv_pages;
      _ = drafted;

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 01:27:16 +0700
-Subject: [PATCH 60/79] flashnext_mia: her store's short-prompt rule, no
+Subject: [PATCH 60/83] flashnext_mia: her store's short-prompt rule, no
  prompt-cache state under 4096 tokens
 
 The port's CUDA families keep a state for every prompt (cuda_snaps
@@ -114,7 +114,7 @@ index 601e23485..bb4568b58 100644
  
      // one request keeps the state at its 3-token history (the chat template's opening, as in the c16 wave)
 diff --git a/zig/src/native/cuda_snaps.zig b/zig/src/native/cuda_snaps.zig
-index 7e883e53f..b407eec72 100644
+index df4527771..51edf3b3c 100644
 --- a/zig/src/native/cuda_snaps.zig
 +++ b/zig/src/native/cuda_snaps.zig
 @@ -2,10 +2,11 @@
@@ -130,7 +130,7 @@ index 7e883e53f..b407eec72 100644
      if (@hasDecl(F, "warm_quiet")) rules.warm = .waits;
      if (@hasDecl(F, "snap_fork")) rules.fork = F.snap_fork; // opt-in, a family at a time after its device check
      if (@hasDecl(F, "snap_tail")) rules.tail = if (@import("core").profile.lookup(F.snap_tail)) |v| std.mem.eql(u8, v, "1") else false;
-@@ -19,7 +20,8 @@ pub fn cacheRules(comptime F: type) api.prompt_cache.Rules {
+@@ -23,7 +24,8 @@ pub fn cacheRules(comptime F: type) api.prompt_cache.Rules {
  /// Native CUDA families own their grid, independently of the server's template chunk starts.
  pub fn passRules(comptime F: type, prompt_rows: u32) api.prompt_cache.Rules {
      var rules = cacheRules(F);
@@ -138,5 +138,5 @@ index 7e883e53f..b407eec72 100644
 +    // a family's own min_prompt keeps nothing below it, not even a chunk end's mark (chunk 0), as db281878's store
 +    rules.chunk = if (@hasDecl(F, "snap_min_prompt")) 0 else prompt_rows;
      if (@hasDecl(F, "snap_repeat_min")) rules.repeat_min = if (std.c.getenv("TF_FLASHNEXT_REPEAT_CACHE")) |v| (if (std.mem.eql(u8, std.mem.span(v), "0")) 0 else F.snap_repeat_min) else F.snap_repeat_min;
-     rules.chunk_starts = false;
-     return rules;
+     // Opt-in until a served A/B shows the extra marks pay: TF_PROMPT_INTERMEDIATE=1 enables the family's ladder.
+     if (rules.intermediate > 0 and !(@import("sys").environment.read(bool, "TF_PROMPT_INTERMEDIATE", false) catch false)) rules.intermediate = 0;

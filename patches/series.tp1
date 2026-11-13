@@ -1,7 +1,7 @@
-# TP1 engine: upstream TensorFold f212eeabde0fc2ac3234ca947a69cc7714abaca2 plus every patch, 0001-0079 (git am, in this order): the TP2 set and three
-# runner commits. The result's tree equals the measured TP1 engine's (b62876185195; its published twin 9b1a0c175fc5).
-base f212eeabde0fc2ac3234ca947a69cc7714abaca2
-tree 8d9a30ed7e33abba648c05c4cabca84a783a7cc1
+# TP1 engine: upstream TensorFold aaac299d1d90c2625e54cb50f3f0d1494c1c33ea plus every patch, 0001-0083 (git am, in this order): the TP2 set and the
+# three runner commits of the measured TP1 engine (b62876185195). The result's tree is the rebased line's head (187e28a03).
+base aaac299d1d90c2625e54cb50f3f0d1494c1c33ea
+tree ce0da63db420e3e20fbf13e5bef1ead3c2f20010
 0001-notices-MiaAI-Lab-s-dual-Spark-recipe-license-notice.patch
 0002-flashnext_mia-build-module-kernel-images-and-the-TF_.patch
 0003-flashnext_mia-CUDA-kernels-for-MiaAI-Lab-s-Flash-Nex.patch
@@ -78,6 +78,10 @@ tree 8d9a30ed7e33abba648c05c4cabca84a783a7cc1
 0074-lanes-the-budget-hold-test-s-result-ends-with-its-EO.patch
 0075-lanes-the-budget-hold-harness-ends-a-reply-s-later-h.patch
 0076-runner-no-drawn-digit-right-after-an-owned-inline-in.patch
-0077-runner-once-a-digit-stop-fired-in-a-reply-hold-its-l.patch
-0078-runner-no-drawn-word-character-glued-to-an-owned-spa.patch
-0079-runner-an-inline-span-inside-an-open-quotation-is-qu.patch
+0077-lean-lane_host-native-cuda-and-server-under-600-line.patch
+0078-lean-two-test-comments-within-120-columns.patch
+0079-flashnext_mia-the-four-settings-upstream-s-Flash-Nex.patch
+0080-lean-native-cuda-under-600-lines-on-aaac299d1.patch
+0081-runner-once-a-digit-stop-fired-in-a-reply-hold-its-l.patch
+0082-runner-no-drawn-word-character-glued-to-an-owned-spa.patch
+0083-runner-an-inline-span-inside-an-open-quotation-is-qu.patch

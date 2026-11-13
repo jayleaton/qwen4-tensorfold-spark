@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 15:04:59 +0700
-Subject: [PATCH 52/79] flashnext_mia: host tests for the lane under
+Subject: [PATCH 52/83] flashnext_mia: host tests for the lane under
  TF_FLASHNEXT_ENGINE=mia, her lanes holding
 
 test-flashnext-mia-host now runs three more native tests:

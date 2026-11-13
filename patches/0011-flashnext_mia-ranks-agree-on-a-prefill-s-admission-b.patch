@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 11:34:06 +0200
-Subject: [PATCH 11/79] flashnext_mia: ranks agree on a prefill's admission
+Subject: [PATCH 11/83] flashnext_mia: ranks agree on a prefill's admission
  before either makes its sequence
 
 The two ranks agree on a prefill's admission before either makes its sequence, whose growth runs a collective

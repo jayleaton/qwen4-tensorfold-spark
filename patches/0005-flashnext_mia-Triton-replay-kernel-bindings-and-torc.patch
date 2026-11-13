@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:57:30 +0300
-Subject: [PATCH 05/79] flashnext_mia: Triton replay, kernel bindings and
+Subject: [PATCH 05/83] flashnext_mia: Triton replay, kernel bindings and
  torch-op replacements
 
 Her engine's launch side: the Python engine's Triton kernels replayed from captured cubins with their

@@ -1,0 +1,110 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 19:50:01 +0700
+Subject: [PATCH 79/83] flashnext_mia: the four settings upstream's Flash Next
+ also reads keep its one row each
+
+Upstream main registered TF_FLASHNEXT_CONFIDENCE, _KEEP_LATE, _PROFILE and _SHARED_SIDE in its
+flashnext scope. Her rows for the same names came first in the table, so upstream's engine
+read them by her forms (SHARED_SIDE took on and off), and two environment tests failed.
+Her rows for the four are gone; her engine checks their flashnext rows when it opens
+(cuda_env.shared), and a test holds every setting to one row. SHARED_SIDE now takes 0 or 1.
+---
+ docs/environment.md                         | 6 +++---
+ zig/src/families/flashnext_mia/cuda_env.zig | 9 ++++++++-
+ zig/src/platform/environment.zig            | 4 ----
+ zig/src/platform/environment_test.zig       | 4 ++++
+ 4 files changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/docs/environment.md b/docs/environment.md
+index 1ee204c83..ed325f071 100644
+--- a/docs/environment.md
++++ b/docs/environment.md
+@@ -128,10 +128,10 @@ The two row counts and the two draft counts keep their existing clamps after par
+ 
+ ## MiaAI-Lab's Flash Next engine
+ 
+-These settings are read only with `TF_FLASHNEXT_ENGINE=mia`. Each has a `flashnext_mia` row in `platform/environment.zig`.
++These settings are read only with `TF_FLASHNEXT_ENGINE=mia`. Each has a `flashnext_mia` row in `platform/environment.zig`, except the four upstream's Flash Next also reads (`TF_FLASHNEXT_CONFIDENCE`, `TF_FLASHNEXT_KEEP_LATE`, `TF_FLASHNEXT_PROFILE`, `TF_FLASHNEXT_SHARED_SIDE`): those keep its one `flashnext` row each.
+ Every row is checked when her engine opens, before it loads anything; a malformed value is refused with the usual message.
+ An accepted value keeps her engine's meaning: her readers still interpret the text, so the table only refuses text they would misread.
+-`TF_FLASHNEXT_CONFIDENCE` and `TF_FLASHNEXT_KEEP_LATE` are also read by the upstream Flash Next engine, with its own meaning.
++Her engine checks those four rows too when it opens; her readers keep their own meaning of an accepted value.
+ 
+ | Variable | Accepted explicit value | Meaning (default) |
+ | --- | --- | --- |
+@@ -156,7 +156,7 @@ An accepted value keeps her engine's meaning: her readers still interpret the te
+ | `TF_FLASHNEXT_INT4AR_FAST` | `0`, `off`, `1` or `on` | `1` loads INT4-AutoRound's lossy `fast-fp8/` overlay (off) |
+ | `TF_FLASHNEXT_PROMPT_MM` | `0`, `off`, `1` or `on` | Prompt matmuls without split-K partials when the kernel set has them (on) |
+ | `TF_FLASHNEXT_DRAW_ONCE` | `0`, `off`, `1` or `on` | Two ranks draw a round's tokens once from gathered candidates when they fit (on) |
+-| `TF_FLASHNEXT_SHARED_SIDE` | `0`, `off`, `1` or `on` | Shared expert on a second stream beside the routed experts (on) |
++| `TF_FLASHNEXT_SHARED_SIDE` | `0` or `1` | Shared expert on a second stream beside the routed experts (on) |
+ | `TF_FLASHNEXT_FP8_LD` | `0`, `off`, `1` or `on` | INT4-AutoRound block-FP8 columns stored in place (on) |
+ | `TF_FLASHNEXT_FP4_SERIAL` | `0`, `off`, `1` or `on` | Shared expert's single-slice gate/up on the K-serial kernel (on) |
+ | `TF_FLASHNEXT_PROMPT_EXPERTS` | `0`, `off`, `1` or `on` | Prompt experts on 128-pair items (on) |
+diff --git a/zig/src/families/flashnext_mia/cuda_env.zig b/zig/src/families/flashnext_mia/cuda_env.zig
+index 3d16def09..e225519d7 100644
+--- a/zig/src/families/flashnext_mia/cuda_env.zig
++++ b/zig/src/families/flashnext_mia/cuda_env.zig
+@@ -2,9 +2,16 @@
+ const std = @import("std");
+ const environment = @import("sys").environment;
+ 
+-/// Refuses the first malformed setting of her rows, before the engine opens anything.
++/// Settings her engine reads that upstream's Flash Next registered first: their one `flashnext` row each applies.
++pub const shared = [_][:0]const u8{ "TF_FLASHNEXT_CONFIDENCE", "TF_FLASHNEXT_KEEP_LATE", "TF_FLASHNEXT_PROFILE", "TF_FLASHNEXT_SHARED_SIDE" };
++
++/// Refuses the first malformed setting of her rows and the shared ones, before the engine opens anything.
+ pub fn startup() !void {
+     try environment.checkScope(.flashnext_mia, environment.Process{});
++    inline for (shared) |name| {
++        comptime environment.registered(name);
++        try environment.check(name, (environment.Process{}).get(name));
++    }
+ }
+ 
+ /// A setting's text as set (null when unset) once its row accepts it; `startup` has refused a malformed one.
+diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
+index ae3170854..50eeacdbf 100644
+--- a/zig/src/platform/environment.zig
++++ b/zig/src/platform/environment.zig
+@@ -58,8 +58,6 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_FLASHNEXT_FILL_LAYERS", .scope = .flashnext_mia, .kind = .size, .forms = "a whole layer count a fill step (default 8; 0 reads as 1)" },
+     .{ .name = "TF_FLASHNEXT_OVERCOMMIT", .scope = .flashnext_mia, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_FLASHNEXT_PRODUCT_STREAMS", .scope = .flashnext_mia, .kind = .size, .forms = "a whole stream count (default 2)" },
+-    .{ .name = "TF_FLASHNEXT_CONFIDENCE", .scope = .flashnext_mia, .kind = .signed_real, .forms = "a finite number; -1 to 1 sets the draft stop rule, others keep -0.4" },
+-    .{ .name = "TF_FLASHNEXT_KEEP_LATE", .scope = .flashnext_mia, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_FLASHNEXT_YARN", .scope = .flashnext_mia, .kind = .positive_real, .trim = " \t\r\n", .words = &.{ "0", "off", "no", "false", "none", "default" }, .forms = "a YaRN factor above 1, or 0, off, no, false, none or default (any case) for none" },
+     .{ .name = "TF_FLASHNEXT_YARN_RAMP_POSITIONS", .scope = .flashnext_mia, .kind = .u64, .trim = " \t\r\n", .forms = "a whole position count" },
+     .{ .name = "TF_FLASHNEXT_ROCE", .scope = .flashnext_mia, .kind = .flag, .forms = "0 or 1" },
+@@ -74,7 +72,6 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_FLASHNEXT_INT4AR_FAST", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+     .{ .name = "TF_FLASHNEXT_PROMPT_MM", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+     .{ .name = "TF_FLASHNEXT_DRAW_ONCE", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+-    .{ .name = "TF_FLASHNEXT_SHARED_SIDE", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+     .{ .name = "TF_FLASHNEXT_FP8_LD", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+     .{ .name = "TF_FLASHNEXT_FP4_SERIAL", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+     .{ .name = "TF_FLASHNEXT_PROMPT_EXPERTS", .scope = .flashnext_mia, .kind = .word, .words = &.{ "0", "off", "1", "on" }, .forms = "0 or off, 1 or on" },
+@@ -93,7 +90,6 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_FLASHNEXT_ATTN_MULTI", .scope = .flashnext_mia, .kind = .size, .forms = "a whole stream count from which attention runs in one launch (0: never)" },
+     .{ .name = "TF_FLASHNEXT_MEDIA_GRAPHS", .scope = .flashnext_mia, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_FLASHNEXT_COUNT_EXPERTS", .scope = .flashnext_mia, .kind = .flag, .forms = "0 or 1" },
+-    .{ .name = "TF_FLASHNEXT_PROFILE", .scope = .flashnext_mia, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_FLASHNEXT_QSA_RT", .scope = .flashnext_mia, .kind = .size, .forms = "a whole row-tile count (0: the kernel's own)" },
+     .{ .name = "TF_FLASHNEXT_QSA_TILES_FROM", .scope = .flashnext_mia, .kind = .size, .forms = "a whole key count from which scores run in tiles" },
+     .{ .name = "TF_FLASHNEXT_QSA_SPLIT_KEYS", .scope = .flashnext_mia, .kind = .size, .forms = "a whole key count a split (0: none)" },
+diff --git a/zig/src/platform/environment_test.zig b/zig/src/platform/environment_test.zig
+index 492b1924a..3e0ba9254 100644
+--- a/zig/src/platform/environment_test.zig
++++ b/zig/src/platform/environment_test.zig
+@@ -294,6 +294,10 @@ test "environment: a legacy alias is checked only while its canonical name is un
+     try t.expect((try e.refusal(a, Alias{ .canonical = null }, .{})) == null);
+ }
+ 
++test "environment: every strict setting has exactly one row, so one name never reads two ways" {
++    for (e.rules, 0..) |r, i| for (e.rules[i + 1 ..]) |other| try t.expect(!std.mem.eql(u8, r.name, other.name));
++}
++
+ test "environment: MiaAI-Lab's engine's rows take 0 and her readers' own forms, and refuse what they misread" {
+     for (e.rules) |r| if (r.scope == .flashnext_mia) {
+         try t.expectEqual(@as(?u64, 0), try e.parse(r.name, "0"));

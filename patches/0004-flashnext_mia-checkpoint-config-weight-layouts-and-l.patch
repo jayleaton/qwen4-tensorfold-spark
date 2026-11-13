@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:57:30 +0300
-Subject: [PATCH 04/79] flashnext_mia: checkpoint config, weight layouts and
+Subject: [PATCH 04/83] flashnext_mia: checkpoint config, weight layouts and
  loading
 
 Her engine's reading of a Flash Next checkpoint: config.json and generation_config.json (YaRN, the MTP head,

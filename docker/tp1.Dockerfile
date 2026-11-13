@@ -12,5 +12,5 @@ RUN ! ldd /opt/tensorfold/bin/tensorfold-native /opt/tensorfold/lib/libtfgrammar
     && ldconfig -p | grep -q "libnccl.so.2 " && ldconfig -p | grep -q "libibverbs.so.1 " && test -x /usr/bin/python3
 ENV PATH=/opt/tensorfold/bin:$PATH
 ARG ENGINE_TREE=""
-LABEL org.tensorfold.engine-tree="${ENGINE_TREE}" org.tensorfold.base="ashhart/TensorFold f212eeabd + patches/series.tp1"
+LABEL org.tensorfold.engine-tree="${ENGINE_TREE}" org.tensorfold.base="ashhart/TensorFold aaac299d1 + patches/series.tp1"
 ENTRYPOINT ["tensorfold-native"]

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 21:02:58 +0700
-Subject: [PATCH 32/79] flashnext: the in-model runner's family binding (Qwen's
+Subject: [PATCH 32/83] flashnext: the in-model runner's family binding (Qwen's
  markup quiet and never owned)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -403,7 +403,7 @@ index 62a4bf466..ffc996ffa 100644
      const cell = "```python\nprint(2**100)\n```\nResult:\n";
      const marked = try one(cell, .{ .inline_mark = true });
 diff --git a/zig/src/families/flashnext/cuda_lanes.zig b/zig/src/families/flashnext/cuda_lanes.zig
-index 056eb51dc..f073d583c 100644
+index 91af5d76b..55c7911e7 100644
 --- a/zig/src/families/flashnext/cuda_lanes.zig
 +++ b/zig/src/families/flashnext/cuda_lanes.zig
 @@ -28,6 +28,7 @@ pub fn Namespace(comptime Tri: type) type {
@@ -415,10 +415,10 @@ index 056eb51dc..f073d583c 100644
          pub const default_context: i64 = @intCast(prompt.max_tokens);
          // a prompt runs on the batched pass in chunks of this many rows, one a prefill_step: no staggered segments
 diff --git a/zig/src/families/flashnext/cuda_launch.zig b/zig/src/families/flashnext/cuda_launch.zig
-index 2503121f1..20347ae36 100644
+index 2c93fbaa2..7e9d53c17 100644
 --- a/zig/src/families/flashnext/cuda_launch.zig
 +++ b/zig/src/families/flashnext/cuda_launch.zig
-@@ -482,6 +482,8 @@ test {
+@@ -488,6 +488,8 @@ test {
      _ = train;
      _ = @import("living.zig");
      _ = @import("compute_binding.zig");
@@ -491,25 +491,25 @@ index 000000000..022bb13ea
 +    try std.testing.expect(std.mem.indexOf(u8, template, "'<|im_start|>assistant\\n' }}") != null);
 +}
 diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
-index 8848bc3a2..3d2f4c6eb 100644
+index 5c9f94379..64ae24b87 100644
 --- a/zig/src/native/cuda.zig
 +++ b/zig/src/native/cuda.zig
-@@ -441,6 +441,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+@@ -450,6 +450,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
      h.kv_count = if (admit != null) kv_pages.ledgerPool(F, loaded) else null;
      const bench = if (@hasDecl(F, "benchmark")) F.benchmark(loaded.ctx) else api.Benchmark{ .ranks = 1 };
      const readouts: ?lanes.readout.Info = if (@hasField(@TypeOf(loaded), "readouts")) loaded.readouts else null;
 +    // TF_RUNNER*: the family's in-model runner, open for the engine's life; the server gives it the tokenizer
 +    const runner = if (@hasDecl(F, "runner")) if (try F.runner.parse(&cuda_device.knob)) |rc| try api.runner.open(gpa, rc) else null else null;
 +    if (runner != null) try F.runner.openRoundTrace(&cuda_device.knob);
-     try h.serve(io, served.facts, loaded.rows, .{
+     try h.serve(io, served.facts, loaded.rows, familyInfo(F, .{
          .benchmark_ranks = bench.ranks,
          .benchmark_group = bench.group,
-@@ -467,6 +470,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+@@ -476,6 +479,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
          .text_generation = readouts == null, // a readout engine answers its readouts only (Clef's /v1/systemone)
          .compute = if (@hasDecl(F, "compute")) try F.compute.parse(&cuda_device.knob) else null, // replies hold at EOS
          .compute_tool = if (@hasDecl(F, "compute")) F.compute.tool else .{},
 +        .runner = runner,
-     }, .{ .ctx = loaded.ctx, .text = F.explain });
+     }), .{ .ctx = loaded.ctx, .text = F.explain });
      opened = true;
      kv_pages.warnCapacity(cache_capacity, o.keep == 0 or o.prompt_cache_gib == 0 or share, if (paged) |p| p.taken else 0, std.log); // TF_KV_SHARE: no copied rows
 diff --git a/zig/src/native/cuda_startup_phase.zig b/zig/src/native/cuda_startup_phase.zig
@@ -550,10 +550,10 @@ index 17aafc234..724f840ce 100644
      try std.testing.expectEqualStrings(trust, trim(trust)); // a request sending it injected these same bytes
  }
 diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
-index 971b39a59..622529d48 100644
+index 320e3a9c1..90a2c1a7e 100644
 --- a/zig/src/server/server.zig
 +++ b/zig/src/server/server.zig
-@@ -216,8 +216,11 @@ pub const Server = struct {
+@@ -225,8 +225,11 @@ pub const Server = struct {
              try @import("runner_text.zig").attach(srv.arena.allocator(), text, r);
              srv.guides = try @import("runner_guide.zig").Set.load(srv.arena.allocator(), io, r.cfg.guide);
              srv.guides.max_request_bytes = r.cfg.guide_max_bytes;

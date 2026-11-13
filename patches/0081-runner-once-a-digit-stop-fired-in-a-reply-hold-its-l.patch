@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 21:58:08 +0700
-Subject: [PATCH 77/79] runner: once a digit stop fired in a reply, hold its
+Subject: [PATCH 81/83] runner: once a digit stop fired in a reply, hold its
  later reasoning digit runs at 64 digits
 
 After the stop's newline Qwen3.8-Flash-Next TP2 restarted a fresh digit run on the next line, about 1,000 digits each until the run cap, 8 runs in one reply (digit gate, 3^300 and 2^500). TF_RUNNER_DIGIT_HOLD_MAX (default 64, 0 off) caps those later runs; forced rows and owned values are never cut.
@@ -14,12 +14,12 @@ After the stop's newline Qwen3.8-Flash-Next TP2 restarted a fresh digit run on t
  5 files changed, 88 insertions(+), 13 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index a96f6ed74..28edf95fa 100644
+index deb071e75..ec7e17249 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -4,7 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+@@ -348,7 +348,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
  
- ## Unreleased
+ - Tests: `zig build sessions-writes` drives the real DeepSeek-V4.1 session store and NVMe index with synthetic agent, chat and mixed loads, no model or GPU, and reports the bytes an enabled tier (`TF_DSV41_SESSION_DISK`) writes and reads back; a nightly Linux test checks its accounting against real files (#2660).
  
 -- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged.
 +- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line.

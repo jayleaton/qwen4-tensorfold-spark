@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 18:23:38 +0700
+Subject: [PATCH 78/83] lean: two test comments within 120 columns
+
+---
+ zig/src/core/lanes/round_trace_test.zig            | 2 +-
+ zig/src/core/runner_frontend_compile_time_test.zig | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/core/lanes/round_trace_test.zig b/zig/src/core/lanes/round_trace_test.zig
+index 74d69f69d..b40ccb815 100644
+--- a/zig/src/core/lanes/round_trace_test.zig
++++ b/zig/src/core/lanes/round_trace_test.zig
+@@ -1,4 +1,4 @@
+-//! The round trace beside streams that finish and are freed: it reads only live streams (a rank-0 fault seen in a smoke run).
++//! The round trace beside streams that finish and are freed: it reads only live streams (a rank-0 fault).
+ const std = @import("std");
+ const Engine = @import("engine.zig").Engine;
+ const sm = @import("stream.zig");
+diff --git a/zig/src/core/runner_frontend_compile_time_test.zig b/zig/src/core/runner_frontend_compile_time_test.zig
+index d690a070f..387c54f8a 100644
+--- a/zig/src/core/runner_frontend_compile_time_test.zig
++++ b/zig/src/core/runner_frontend_compile_time_test.zig
+@@ -25,7 +25,7 @@ test "a compiler slower than 1 s still ends on its own inside the translate dead
+     file.close(t.io);
+     const clang = try tmp.dir.realPathFileAlloc(t.io, "slow-clang", t.allocator);
+     defer t.allocator.free(clang);
+-    // the first ELF compile of a process on a cold page cache took 1.0 s on a DGX Spark and was cut at the old 1000 ms cap
++    // a process's first ELF compile on a cold page cache can pass 1 s, which the old 1000 ms cap cut
+     try t.expect(try timed(clang, 1900) >= 1300);
+     try t.expect(try timed(clang, null) >= 1300);
+     try t.expect(try timed(clang, 300) < 1000);

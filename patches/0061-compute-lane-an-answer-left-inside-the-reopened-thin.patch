@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 22:45:45 +0700
-Subject: [PATCH 61/79] compute lane: an answer left inside the reopened think
+Subject: [PATCH 61/83] compute lane: an answer left inside the reopened think
  block gets the template's next turn, thinking off
 
 With thinking on, the turn after a tool result opens a new think block. When the model wrote its answer

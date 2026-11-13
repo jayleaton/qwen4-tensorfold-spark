@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 19:38:05 +0700
-Subject: [PATCH 53/79] core lanes, lane host: opt-in burst split, short
+Subject: [PATCH 53/83] core lanes, lane host: opt-in burst split, short
  prompts' small cache hits dropped to join
 
 Model.burst_split / burst_short (off by default, Config copies them): when the host admits
@@ -58,10 +58,10 @@ index 2674d8614..8b8579652 100644
      for (jobs[0..n], 0..) |job, i| streams[i] = &job.stream;
      var errs: [lanes.Engine.max_together]?anyerror = undefined;
 diff --git a/zig/src/core/lanes/config.zig b/zig/src/core/lanes/config.zig
-index d09b00858..12b115fc3 100644
+index 6f99d9fb4..88f6b3bf9 100644
 --- a/zig/src/core/lanes/config.zig
 +++ b/zig/src/core/lanes/config.zig
-@@ -46,6 +46,8 @@ pub const Model = struct {
+@@ -51,6 +51,8 @@ pub const Model = struct {
      draft_stops: bool = false, // opt-in: the head stops each chain itself (a running product): ask the most drafts
      draft_stops_most: u32 = std.math.maxInt(u32), // ... while at most this many streams are live
      join_batch: bool = false, // opt-in: joiners' first drafts wait for the next round, in one batch (lanes/join_batch.zig)
@@ -70,7 +70,7 @@ index d09b00858..12b115fc3 100644
      copy_first: bool = false, // a copy ahead takes the round: the head holds no drafts for it (a drafter's own pass)
      hold_costs: []const @import("hold_price.zig").HoldCost = &.{}, // a drafter's own hold pass, timed at load
      head_trees: bool = false, // the head drafts trees of lanes (DraftRequest.lanes) and holds them
-@@ -89,6 +91,8 @@ pub const Config = struct {
+@@ -95,6 +97,8 @@ pub const Config = struct {
      head_stops: bool = false, // Model.draft_stops
      head_stops_most: u32 = std.math.maxInt(u32), // Model.draft_stops_most
      join_batch: bool = false, // Model.join_batch
@@ -79,7 +79,7 @@ index d09b00858..12b115fc3 100644
      /// a prompt in pieces leaves its last token as the pending row of its first shared round's window
      join_tail: bool = false,
      /// a round's pieces of several streams in one backend call (Backend.pieces), which may run them as one forward
-@@ -176,6 +180,8 @@ pub const Config = struct {
+@@ -184,6 +188,8 @@ pub const Config = struct {
              .head_stops = m.draft_stops,
              .head_stops_most = m.draft_stops_most,
              .join_batch = m.join_batch,

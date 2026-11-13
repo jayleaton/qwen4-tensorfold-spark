@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 23:24:21 +0700
+Subject: [PATCH 80/83] lean: native/cuda under 600 lines on aaac299d1
+
+Upstream grew native/cuda.zig to 598 lines, so the flashnext_mia route put it
+at 603. The route imports cuda_flashnext_mia.zig where it is used (wanted()'s
+doc says why it comes before the registry loop), and the test block drops
+cuda_lane_info.zig, which has no tests (openWith instantiates it). 600 lines.
+---
+ zig/src/native/cuda.zig | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
+index 5ffe2c217..74a37fdc0 100644
+--- a/zig/src/native/cuda.zig
++++ b/zig/src/native/cuda.zig
+@@ -23,7 +23,6 @@ const vision_offer = @import("cuda_vision_offer.zig");
+ const drafted = @import("cuda_drafted.zig");
+ const kv_pages = @import("cuda_kv_pool.zig");
+ const cuda_families = @import("cuda_families.zig");
+-const flashnext_mia = @import("cuda_flashnext_mia.zig");
+ /// CUDA families provide metadata, open their lane backend and explain their refusals.
+ pub const registry = cuda_families.registry;
+ /// --record opens here (engines.zig refuses it for a backend without this).
+@@ -165,8 +164,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
+     if (std.mem.eql(u8, o.model_type, "fish_omni")) return openDrama(a, gpa, io, o, problem);
+     if (std.mem.eql(u8, o.model_type, "qwen4") or std.mem.eql(u8, o.model_type, "qwen4_text")) return @import("qwen4_cuda.zig").open(a, gpa, io, o, problem);
+     if (std.mem.eql(u8, o.model_type, "qwen3")) return @import("cuda_qwen3.zig").open(a, gpa, io, o, problem, budget, windows);
+-    // MiaAI-Lab's Flash Next engine also reads qwen4_exp: TF_FLASHNEXT_ENGINE=mia picks it over upstream's flashnext
+-    if (flashnext_mia.wanted(o)) return openWith(flashnext_mia.family, a, gpa, io, o, problem);
++    if (@import("cuda_flashnext_mia.zig").wanted(o)) return openWith(@import("cuda_flashnext_mia.zig").family, a, gpa, io, o, problem);
+     inline for (registry) |F| if (std.mem.eql(u8, o.model_type, F.model_type)) return openWith(F, a, gpa, io, o, problem);
+     if (std.mem.eql(u8, o.model_type, lfm2.family.model_type)) {
+         if (refusals.lfm2(o)) |why| {
+@@ -568,8 +566,7 @@ test {
+     _ = @import("cuda_ledger.zig");
+     _ = kv_pages;
+     _ = drafted;
+-    _ = flashnext_mia; // MiaAI-Lab's family against the contract
+-    _ = @import("cuda_lane_info.zig");
++    _ = @import("cuda_flashnext_mia.zig"); // MiaAI-Lab's family against the contract
+     _ = cuda_disk; // its tests run under test-cuda-disk-open-host's filter
+     _ = @import("cuda_disk_identity_test.zig");
+ }

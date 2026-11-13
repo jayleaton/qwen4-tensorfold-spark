@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 14:59:13 +0700
-Subject: [PATCH 51/79] flashnext_mia: bind the compute lane and the in-model
+Subject: [PATCH 51/83] flashnext_mia: bind the compute lane and the in-model
  runner as upstream's flashnext
 
 Her family (TF_FLASHNEXT_ENGINE=mia) declares `compute` and `runner`, the
@@ -20,10 +20,10 @@ Build: one flashnext module, shared by the native engines module and hers.
  3 files changed, 9 insertions(+), 4 deletions(-)
 
 diff --git a/zig/build/cuda_engines.zig b/zig/build/cuda_engines.zig
-index c29320d94..079670a48 100644
+index 7ee856df1..80454a4e1 100644
 --- a/zig/build/cuda_engines.zig
 +++ b/zig/build/cuda_engines.zig
-@@ -48,6 +48,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
+@@ -66,6 +66,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
      const api = qwen35.import_table.get("engine_api").?; // family()'s, so the server and qwen3_5 share one
      const canon = canonModule(b, target, optimize);
      const verbs = @import("tp.zig").verbsModule(b, target, optimize);
@@ -31,19 +31,19 @@ index c29320d94..079670a48 100644
      const mod = b.createModule(.{
          .root_source_file = b.path("zig/src/native/cuda.zig"),
          .target = target,
-@@ -61,7 +62,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
+@@ -79,7 +80,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
              .{ .name = "drama3", .module = @import("drama3_host.zig").module(b, target, optimize, cuda, core) },
              .{ .name = "lfm2", .module = lfm2Module(b, target, optimize, cuda, core) },
              .{ .name = "core", .module = core },
 -            .{ .name = "flashnext", .module = flashnextModule(b, target, optimize, cuda, core, lanes, qwen_vision, api) },
 +            .{ .name = "flashnext", .module = flashnext },
              .{ .name = "glm_cuda", .module = glmCudaShared(b, target, optimize, cuda, core, lanes, heat, api, canon, verbs) },
+             .{ .name = "qwen3_cuda", .module = qwen3Module(b, target, optimize, cuda, core, lanes, api) },
              .{ .name = "minimax_m3_cuda", .module = @import("minimax_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
-             .{ .name = "qwen35", .module = qwen35 },
-@@ -70,7 +71,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
-             .{ .name = "spark25", .module = @import("spark25.zig").module(b, target, optimize, cuda, core, lanes) },
+@@ -90,7 +91,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
              .{ .name = "lfm2_moe_cuda", .module = @import("lfm2_moe_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
              .{ .name = "dory", .module = @import("dory.zig").module(b, target, optimize, cuda, core, lanes) },
+             .{ .name = "dots_mocr_cuda", .module = @import("dots_mocr_cuda.zig").module(b, target, optimize, cuda, core, lanes, @import("cuda_dense.zig").module(b, target, optimize, cuda, core, lanes)) },
 -            .{ .name = "flashnext_mia", .module = @import("flashnext_mia.zig").module(b, target, optimize, cuda, core, lanes) },
 +            .{ .name = "flashnext_mia", .module = @import("flashnext_mia.zig").module(b, target, optimize, cuda, core, lanes, flashnext) },
          },

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 20:25:05 +0700
-Subject: [PATCH 63/79] lanes: a forced result lands whole; no hold before its
+Subject: [PATCH 63/83] lanes: a forced result lands whole; no hold before its
  last forced row
 
 A window that takes a forced tail whole (a runner's or a tool's result shorter than the
@@ -30,10 +30,10 @@ A fix applied onto the think-close change.
  create mode 100644 zig/src/core/lanes/forced_rows_hold_test.zig
 
 diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
-index 32b30caa5..c4dafce49 100644
+index 0a0f9dd43..fdb5b8d26 100644
 --- a/zig/build/lane_halt_host.zig
 +++ b/zig/build/lane_halt_host.zig
-@@ -19,6 +19,7 @@ pub fn steps(b: *std.Build) void {
+@@ -21,6 +21,7 @@ pub fn steps(b: *std.Build) void {
      hold.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"compute hold:"} })).step);
      b.step("test-runner-abstain-host", "Abstain records: each abstained cell's source, reason and decision point").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner abstain records:"} })).step);
      b.step("test-settle-fire-host", "PREFIX_SYNC_GRAPH on the fake target: fires settled at their trigger never hold").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"settled fires:"} })).step);
@@ -134,10 +134,10 @@ index cbd6d3252..a28df4a77 100644
  pub fn resumeAwaiting(s: *Stream, gpa: Allocator, tokens: []const u32) Allocator.Error!bool {
      if (!s.awaiting or !s.held or s.finished) return false;
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index 926e9358a..59c575548 100644
+index 9054c05b7..08aff33a9 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -70,6 +70,7 @@ test {
+@@ -73,6 +73,7 @@ test {
      _ = @import("hold_test.zig");
      _ = @import("fire_replay_test.zig");
      _ = @import("settle_fire_test.zig");
@@ -195,7 +195,7 @@ index c5860d222..b09f23da6 100644
  
  test {
 diff --git a/zig/src/core/lanes/windows.zig b/zig/src/core/lanes/windows.zig
-index a4452b3f3..bdde5c966 100644
+index 7b722cc19..73bb96f46 100644
 --- a/zig/src/core/lanes/windows.zig
 +++ b/zig/src/core/lanes/windows.zig
 @@ -70,6 +70,7 @@ pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {

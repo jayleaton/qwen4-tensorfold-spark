@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 16:07:35 +0700
-Subject: [PATCH 57/79] compute lane: a resumed segment that ends inside its
+Subject: [PATCH 57/83] compute lane: a resumed segment that ends inside its
  reopened think block answers with that text
 
 With thinking on, the turn after a tool result opens a new think block. When the model answered

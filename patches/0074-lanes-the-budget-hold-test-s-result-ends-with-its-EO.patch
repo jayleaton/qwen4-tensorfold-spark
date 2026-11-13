@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 17:41:08 +0700
-Subject: [PATCH 74/79] lanes: the budget-hold test's result ends with its EOS
+Subject: [PATCH 74/83] lanes: the budget-hold test's result ends with its EOS
  and a newline, the rows that land with the cut
 
 ---

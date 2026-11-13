@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MiaAI-Lab <MiaAI-Lab@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:57:30 +0300
-Subject: [PATCH 09/79] flashnext_mia: kernel-set specs, AOT build and oracle
+Subject: [PATCH 09/83] flashnext_mia: kernel-set specs, AOT build and oracle
  tools
 
 The tools that make and check her engine's kernel set: the Triton kernel specs (kernels.json, the INT4-AutoRound

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 21:36:08 +0700
-Subject: [PATCH 66/79] lanes: a backend names the prompts it holds mid-chunk;
+Subject: [PATCH 66/83] lanes: a backend names the prompts it holds mid-chunk;
  the fill picker finishes an open chunk before switching
 
 Backend.open_fills (0: any; wrappers copy it) and Stream.fill_open (the backend's word after each prefill_step).
@@ -294,7 +294,7 @@ index bda839563..4e1f081b0 100644
      vtable: *const VTable,
  
 diff --git a/zig/src/core/lanes/drafted.zig b/zig/src/core/lanes/drafted.zig
-index e199b907d..1644e6b5b 100644
+index b7775420b..0d2f2d1cc 100644
 --- a/zig/src/core/lanes/drafted.zig
 +++ b/zig/src/core/lanes/drafted.zig
 @@ -71,7 +71,7 @@ pub const Drafted = struct {

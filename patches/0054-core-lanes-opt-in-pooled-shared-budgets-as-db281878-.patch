@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 19:38:11 +0700
-Subject: [PATCH 54/79] core lanes: opt-in pooled shared budgets, as db281878's
+Subject: [PATCH 54/83] core lanes: opt-in pooled shared budgets, as db281878's
  Rule.budgets allocated them
 
 Model.pooled_budgets (off by default): a shared round's head budgets come from allocate over
@@ -22,10 +22,10 @@ f212's (2 and 1) unpooled, at a 6 ms head step.
  create mode 100644 zig/src/core/lanes/pooled_budgets_test.zig
 
 diff --git a/zig/src/core/lanes/config.zig b/zig/src/core/lanes/config.zig
-index 12b115fc3..7b0e6acaa 100644
+index 88f6b3bf9..4c1fbd329 100644
 --- a/zig/src/core/lanes/config.zig
 +++ b/zig/src/core/lanes/config.zig
-@@ -48,6 +48,7 @@ pub const Model = struct {
+@@ -53,6 +53,7 @@ pub const Model = struct {
      join_batch: bool = false, // opt-in: joiners' first drafts wait for the next round, in one batch (lanes/join_batch.zig)
      burst_split: bool = false, // opt-in: a burst's resumed or marked prompts prefill alone, the rest still together
      burst_short: u32 = 0, // with burst_split: a prompt shorter than this drops its resume and marks to join a burst
@@ -33,7 +33,7 @@ index 12b115fc3..7b0e6acaa 100644
      copy_first: bool = false, // a copy ahead takes the round: the head holds no drafts for it (a drafter's own pass)
      hold_costs: []const @import("hold_price.zig").HoldCost = &.{}, // a drafter's own hold pass, timed at load
      head_trees: bool = false, // the head drafts trees of lanes (DraftRequest.lanes) and holds them
-@@ -93,6 +94,7 @@ pub const Config = struct {
+@@ -99,6 +100,7 @@ pub const Config = struct {
      join_batch: bool = false, // Model.join_batch
      burst_split: bool = false, // Model.burst_split (the lane host's burst admission reads it)
      burst_short: u32 = 0, // Model.burst_short
@@ -41,7 +41,7 @@ index 12b115fc3..7b0e6acaa 100644
      /// a prompt in pieces leaves its last token as the pending row of its first shared round's window
      join_tail: bool = false,
      /// a round's pieces of several streams in one backend call (Backend.pieces), which may run them as one forward
-@@ -182,6 +184,7 @@ pub const Config = struct {
+@@ -190,6 +192,7 @@ pub const Config = struct {
              .join_batch = m.join_batch,
              .burst_split = m.burst_split,
              .burst_short = m.burst_short,
@@ -50,26 +50,26 @@ index 12b115fc3..7b0e6acaa 100644
              .piece_runs = m.piece_runs,
              .join_drafts = m.join_drafts,
 diff --git a/zig/src/core/lanes/depth.zig b/zig/src/core/lanes/depth.zig
-index 7c3ebaef6..3382280c5 100644
+index f8b7049cf..7fc6041bf 100644
 --- a/zig/src/core/lanes/depth.zig
 +++ b/zig/src/core/lanes/depth.zig
-@@ -74,6 +74,7 @@ pub const Rule = struct {
+@@ -61,6 +61,7 @@ pub const Rule = struct {
      head_stops: bool = false, // opt-in: the head stops each chain itself, so every ask is the room's most drafts
      head_stops_most: u32 = std.math.maxInt(u32), // ... while at most this many streams are live (`live`)
      live: usize = 0, // the engine's live streams, set at each step when head_stops is on (lanes/join_batch.zig)
 +    pooled_budgets: bool = false, // opt-in: budgets as db281878 made them (head steps in the overhead, no probe row)
      batch_rows: u32,
-     batched_heads: bool = false, // one batch drafts every stream of a shared round (its steps: the deepest stream's)
+     batched_heads: bool = false, // one batch drafts every stream of a shared round (steps: the deepest stream's)
      row_cost: @import("row_cost.zig").RowCost = .{}, // what a row costs past shared_costs here, under k.learn_rows
-@@ -346,12 +347,14 @@ pub const Rule = struct {
+@@ -336,12 +337,14 @@ pub const Rule = struct {
          defer r.gpa.free(ones);
          @memset(ones, 1);
-         const head: alloc.HeadCost = .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .row_ms = r.row_cost.extraMs(whos.len, sampled) };
+         const head: alloc.HeadCost = .{ .step_ms = r.sharedStepMs(), .batched = r.batched_heads, .row_ms = r.row_cost.extraMs(whos.len, sampled), .least_rows = r.row_cost.leastRows(whos.len, sampled) };
 -        const counts = if (r.draft_step_ms != 0)
 +        const counts = if (r.pooled_budgets)
 +            try alloc.allocate(r.gpa, ones, probs, r.shared_costs, r.overheadMs(whos.len, sampled), @max(whos.len, r.batch_rows))
 +        else if (r.draft_step_ms != 0)
-             try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, r.overheadMs(whos.len, sampled), r.row_cost.capRows(whos.len, sampled, @max(whos.len, r.batch_rows)), .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .row_ms = r.row_cost.extraMs(whos.len, sampled) })
+             try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, r.overheadMs(whos.len, sampled), r.row_cost.capRows(whos.len, sampled, @max(whos.len, r.batch_rows)), .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .row_ms = r.row_cost.extraMs(whos.len, sampled), .least_rows = head.least_rows })
          else
              try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, r.fixedMs(whos.len, sampled), r.row_cost.capRows(whos.len, sampled, @max(whos.len, r.batch_rows)), head);
          defer r.gpa.free(counts);
@@ -79,11 +79,11 @@ index 7c3ebaef6..3382280c5 100644
              // no draft where none pays; a probe after a growing run of plain rounds
              for (whos, counts) |w, *c| {
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 3fa73406e..4c2a1c427 100644
+index e933d290c..3d00bbf0e 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -76,6 +76,7 @@ pub const Engine = struct {
-                 .confidence_floor = cfg.draft_confidence,
+                 .plain_streams = cfg.plain_streams,
                  .batch_rows = cfg.batch_rows,
                  .batched_heads = cfg.draft_streams,
 +                .pooled_budgets = cfg.pooled_budgets,
@@ -91,17 +91,17 @@ index 3fa73406e..4c2a1c427 100644
          };
      }
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index 2ba4d5a86..af04bc87b 100644
+index 5f71e1aad..0472482f8 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -86,6 +86,7 @@ test {
+@@ -90,6 +90,7 @@ test {
      _ = @import("depth_probe_test.zig");
      _ = @import("head_stops_test.zig");
      _ = @import("join_batch_test.zig");
 +    _ = @import("pooled_budgets_test.zig");
      _ = @import("proposal_external_test.zig");
      _ = @import("lone_costs_test.zig");
-     _ = @import("lone_backoff_test.zig");
+     _ = @import("depth_floor_test.zig");
 diff --git a/zig/src/core/lanes/pooled_budgets_test.zig b/zig/src/core/lanes/pooled_budgets_test.zig
 new file mode 100644
 index 000000000..5fcc7bc45

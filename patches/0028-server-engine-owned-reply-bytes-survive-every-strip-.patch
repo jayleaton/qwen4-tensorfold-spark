@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 17:28:00 +0700
-Subject: [PATCH 28/79] server: engine-owned reply bytes survive every strip,
+Subject: [PATCH 28/83] server: engine-owned reply bytes survive every strip,
  at the format's own call openers
 
 reply_owned.zig: an Owned span of a reply's content (where the engine's cell
@@ -36,10 +36,10 @@ Ported from the dsv41 release line's runner_owned.zig and reply_text.Owned.
  create mode 100644 zig/src/server/reply_owned_test.zig
 
 diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
-index f274c74f7..4b21c46b5 100644
+index df7ae00a1..7a55209c8 100644
 --- a/zig/src/server/chat.zig
 +++ b/zig/src/server/chat.zig
-@@ -76,6 +76,7 @@ pub const Reply = struct {
+@@ -83,6 +83,7 @@ pub const Reply = struct {
      prompt_logprobs: ?Value = null,
      loop_stop: ?u32 = null, // the loop period when --loop-guard-stop ended the reply in its reasoning
      compute_ran: usize = 0, // the lane's built-in calls the sandbox ran (not malformed or past the cap)
@@ -422,10 +422,10 @@ index 000000000..0d257df35
 +    }
 +}
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index b653c7cb5..ca77cf5d5 100644
+index 2a7702a40..70f250284 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -208,6 +208,7 @@ test {
+@@ -232,6 +232,7 @@ test {
      _ = @import("compute_lane_http_test.zig");
      _ = @import("compute_default_test.zig");
      _ = @import("compute_default_fit_test.zig");
@@ -434,7 +434,7 @@ index b653c7cb5..ca77cf5d5 100644
      if (comptime @import("builtin").os.tag != .windows) {
          _ = @import("benchmark_suite.zig");
 diff --git a/zig/src/server/tool_parse.zig b/zig/src/server/tool_parse.zig
-index 149f673ff..dcbfa7dab 100644
+index 401b75e6b..f6b00bce3 100644
 --- a/zig/src/server/tool_parse.zig
 +++ b/zig/src/server/tool_parse.zig
 @@ -3,6 +3,7 @@ const std = @import("std");
@@ -502,7 +502,7 @@ index 149f673ff..dcbfa7dab 100644
  
  /// What closes the call ``text`` ends inside (the model's end token came before its ``
 diff --git a/zig/src/server/tool_stream.zig b/zig/src/server/tool_stream.zig
-index 08672eed7..70c1a76f5 100644
+index 28ac9d52b..59021c128 100644
 --- a/zig/src/server/tool_stream.zig
 +++ b/zig/src/server/tool_stream.zig
 @@ -3,6 +3,7 @@ const std = @import("std");
@@ -513,7 +513,7 @@ index 08672eed7..70c1a76f5 100644
  const tool_dsml = @import("tool_dsml.zig");
  const tool_dsml_stream = @import("tool_dsml_stream.zig");
  const tool_glm_cut = @import("tool_glm_cut.zig");
-@@ -378,6 +379,14 @@ pub fn endProse(a: Allocator, content: []const u8, text: []const u8, tools: []co
+@@ -379,6 +380,14 @@ pub fn endProse(a: Allocator, content: []const u8, text: []const u8, tools: []co
      return if (cut) reply_text.cutProse(a, content) else reply_text.finishedProse(a, content);
  }
  

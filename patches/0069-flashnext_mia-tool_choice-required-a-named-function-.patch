@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 15:15:52 +0700
-Subject: [PATCH 69/79] flashnext_mia: tool_choice required, a named function
+Subject: [PATCH 69/83] flashnext_mia: tool_choice required, a named function
  and Anthropic any force a call (ported from MiaAI-Lab patch 0007)
 
 The lane engine has no grammar hook (and TP2 serves without structures), so checkFeatures refused these with a 400.
@@ -46,13 +46,13 @@ the call from a plain, a thinking and a pipelined reply, and leaves a model's ow
  create mode 100644 zig/src/server/tool_call_gate_test.zig
 
 diff --git a/zig/build/cuda_server_host.zig b/zig/build/cuda_server_host.zig
-index ee6a76036..66d9dceb7 100644
+index 1f7d671cc..c66cfd3fe 100644
 --- a/zig/build/cuda_server_host.zig
 +++ b/zig/build/cuda_server_host.zig
-@@ -23,6 +23,9 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
-     eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"EOS policy:"} })).step);
+@@ -30,6 +30,9 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
      eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = mods.tokenizer, .filters = &.{"EOS policy:"} })).step);
      eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = kolibri1Module(b, host, .debug, cuda, mods.core, mods.lanes), .filters = &.{"EOS policy:"} })).step);
+     b.step("test-serve-flags-host", "Serve flag parsing a later flag replaces, without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"--compact-at:"} })).step);
 +    const call_gate = b.step("test-call-gate-host", "tool_choice required, named and any through the lane core's call gate (patch 0007), no GPU");
 +    call_gate.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"call gate:"} })).step);
 +    call_gate.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = mods.lanes, .filters = &.{"call gate:"} })).step);
@@ -82,7 +82,7 @@ index 74b48a1ef..bc4f69a11 100644
  /// response_format and the guided_* fields: every token keeps the reply inside this grammar.
  pub const Structure = struct {
 diff --git a/zig/src/core/lane_stream.zig b/zig/src/core/lane_stream.zig
-index ead89cbe1..dae342d58 100644
+index e0d56849b..3db2ba9b2 100644
 --- a/zig/src/core/lane_stream.zig
 +++ b/zig/src/core/lane_stream.zig
 @@ -37,8 +37,8 @@ pub fn open(h: *LaneHost, job: *Job) bool {
@@ -403,7 +403,7 @@ index 000000000..fdaff1a3c
 +    try t.expect((try g.cut(arena.allocator(), &.{ 7, 7 })) == null);
 +}
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 062e02f7d..b850457f3 100644
+index 4baddf23e..ac20da93f 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -150,8 +150,8 @@ pub const Engine = struct {
@@ -456,10 +456,10 @@ index ce4c78cd5..cf5b32bc7 100644
      }
      var row: [1]LogRow = undefined;
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index 59c575548..f0d9ef0a9 100644
+index 08aff33a9..5b9b987e7 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -46,6 +46,7 @@ pub const drafted = @import("drafted.zig");
+@@ -49,6 +49,7 @@ pub const drafter_depth_sweep = @import("drafter_depth_sweep.zig"); // any famil
  pub const recorder = @import("recorder.zig");
  pub const logprob = @import("logprob.zig");
  pub const grammar = @import("grammar.zig");
@@ -615,10 +615,10 @@ index ffcfeda56..3a95c5f0b 100644
  /// f212's contract (cuda_options.zig): lanes is --parallel, kv8 --kv-cache fp8 (her --kv-dtype fp8); segments ignored.
  pub const Options = struct { context: usize, drafts: bool, segments: usize = 1, slide: bool = false, lanes: u32 = 1, prompt_cache_gib: ?f64 = null, tp: u32 = 1, rank: u32 = 0, master: ?[]const u8 = null, master_port: u16 = 29551, kv8: bool = false };
 diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
-index 1bebb6951..73cfd70ee 100644
+index 6d6d2a599..28059cc88 100644
 --- a/zig/src/native/cuda.zig
 +++ b/zig/src/native/cuda.zig
-@@ -465,6 +465,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+@@ -474,6 +474,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
          .prompt_logprobs = served.backend.vtable.prompt_rows,
          .penalties = served.backend.penalties,
          .structures = served.backend.vtable.first_masked != null,
@@ -627,10 +627,10 @@ index 1bebb6951..73cfd70ee 100644
          .admit = admit,
          .ledger = @import("cuda_ledger.zig").info(if (h.kv_plan) |*p| p else null),
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index 75f40fb8c..725f2b43e 100644
+index 0e5b01f0c..9fdbe23e4 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -65,6 +65,7 @@ test {
+@@ -75,6 +75,7 @@ test {
      _ = @import("tool_grammar_lfm2.zig");
      _ = @import("tool_grammar_lfm2_test.zig");
      _ = @import("tool_required_test.zig");
@@ -639,10 +639,10 @@ index 75f40fb8c..725f2b43e 100644
      _ = @import("grammar.zig");
      _ = @import("pyrepr.zig");
 diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
-index 7ed362403..e900aea9c 100644
+index c3e6903cd..8dfd61c51 100644
 --- a/zig/src/server/server.zig
 +++ b/zig/src/server/server.zig
-@@ -349,7 +349,9 @@ pub const Server = struct {
+@@ -369,7 +369,9 @@ pub const Server = struct {
          const required = if (f.get("tool_call_required")) |r| r.truthy() else false;
          const one_call = if (f.get("tool_call_single")) |x| x.truthy() else false;
          const all = has_tools and !required and (tool_grammar.autoAllEnv() catch return cx.fail(.server, "invalid TF_DSV41_TOOL_GRAMMAR: expected 0 or 1", .{}));

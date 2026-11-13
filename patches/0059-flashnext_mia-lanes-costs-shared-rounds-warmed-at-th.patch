@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 01:25:36 +0700
-Subject: [PATCH 59/79] flashnext_mia lanes costs: shared rounds warmed at the
+Subject: [PATCH 59/83] flashnext_mia lanes costs: shared rounds warmed at the
  timed shape, a 9-rep median, the least of 2 passes
 
 The 8-stream shared-round point varied between boots (123.8 / 131.1 ms against

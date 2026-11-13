@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 14:43:42 +0700
-Subject: [PATCH 64/79] runner: Flash-Next acts in thinking chats only, inside
+Subject: [PATCH 64/83] runner: Flash-Next acts in thinking chats only, inside
  the think block
 
 The in-model runner is in-thinking only. A runner binding's family may now default the scan spans to
@@ -27,12 +27,12 @@ thinking reply's answer triggers nothing.
  create mode 100644 zig/src/server/runner_thinking_only_test.zig
 
 diff --git a/zig/build/cuda_server_host.zig b/zig/build/cuda_server_host.zig
-index 13aa334d4..2a33644f2 100644
+index 63dd9f348..8c46ac05c 100644
 --- a/zig/build/cuda_server_host.zig
 +++ b/zig/build/cuda_server_host.zig
-@@ -59,7 +59,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
-     b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
+@@ -69,7 +69,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
      b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     b.step("test-ocr-host", "OCR route readers, shared page steps and dialects without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"ocr "} })).step);
      b.step("test-compute-lane-http-host", "The compute lane through the chat route: a held python call's result forced in (S3 too)").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "compute lane:", "compute runner:" } })).step);
 -    b.step("test-runner-server-host", "The in-model runner through the chat route: guide, live records, field anchors").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "runner guide:", "runner commit ask:", "runner projection:", "runner live records:" } })).step);
 +    b.step("test-runner-server-host", "The in-model runner through the chat route: guide, live records, field anchors, thinking chats only").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "runner guide:", "runner commit ask:", "runner projection:", "runner live records:", "runner thinking only:" } })).step);
@@ -130,10 +130,10 @@ index 16766ed8e..43ed6264f 100644
 +    try std.testing.expectEqual([2]u32{ 1, 0 }, triggers);
 +}
 diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
-index a544c6b18..7a7204af9 100644
+index 0457b4857..90be14049 100644
 --- a/zig/src/server/chat.zig
 +++ b/zig/src/server/chat.zig
-@@ -110,6 +110,12 @@ test "Server recovery: token staging allocation failure ends the loop without co
+@@ -117,6 +117,12 @@ test "Server recovery: token staging allocation failure ends the loop without co
      }
  }
  
@@ -146,7 +146,7 @@ index a544c6b18..7a7204af9 100644
  /// Python's ``bool(fields.get(key))`` on the sampling fields.
  fn flag(f: Value, key: []const u8) ?bool {
      const v = f.get(key) orelse return null;
-@@ -142,7 +148,7 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+@@ -150,7 +156,7 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
      // the runner guide (runner_guide.zig) with the runner on: the request's, or the boot's under the compute default
      const thinks = input.prompt == null and (flag(input.fields, "enable_thinking") orelse srv.config.enable_thinking);
      const asked_guide = @import("compute_turns.zig").guideAsked(srv, input.fields, thinks);
@@ -155,7 +155,7 @@ index a544c6b18..7a7204af9 100644
          error.BadGuide => return cx.refuse(try srv.guides.refusal(a)),
          error.OutOfMemory => return error.OutOfMemory,
      };
-@@ -228,7 +234,7 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+@@ -237,7 +243,7 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
      // the compute lane: a reply offered the built-in tool holds at each EOS for its results (not with stop strings)
      request.hold_eos = stops_opt.strings.len == 0 and @import("compute_turns.zig").arms(srv, input, &request);
      // the in-model runner (runner_binding.zig): code cells this reply writes run, their results owned in place
@@ -165,10 +165,10 @@ index a544c6b18..7a7204af9 100644
      if (request.run_cells) request.run_trace = @import("runner_guide.zig").traceAsk(f) catch
          return cx.refuse("runner_trace must be a boolean, runner_trace_format one line of at most 128 bytes with {} once, runner_trace_check a boolean, runner_trace_repeat 0 to 3");
 diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
-index fc8786d47..75f40fb8c 100644
+index 7acce8d6e..0e5b01f0c 100644
 --- a/zig/src/server/root.zig
 +++ b/zig/src/server/root.zig
-@@ -37,6 +37,7 @@ test {
+@@ -40,6 +40,7 @@ test {
      _ = @import("done_times_test.zig");
      _ = @import("runner_live_test.zig");
      _ = @import("runner_projection_http_test.zig");

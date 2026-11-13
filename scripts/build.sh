@@ -5,7 +5,7 @@
 #   scripts/build.sh tp1|tp2 [STEP]   STEP: source | native | image | all (default all, in that order)
 #
 #   source  build/PROFILE/src: a clean copy of the submodule at the pinned commit with patches/series.PROFILE applied
-#           by `git am`; fails unless the result's tree is the one the series file pins (the measured engine's tree)
+#           by `git am`; fails unless the result's tree is the one the series file pins (series.tpN, line `tree`)
 #   native  build/PROFILE/out/{bin,lib}: zig build check-native-cuda-host, then tensorfold-native (CUDA sm_121,
 #           ReleaseFast, stripped), tf-runner-frontend-check and libtfgrammar (xgrammar v0.2.8)
 #   image   the Docker layers (docker/): the serving base, the in-model runner layer, and for TP1 the CUDA
@@ -71,8 +71,8 @@ step_source() {
   done < "$SERIES"
   local got
   got=$(git -C "$SRC" rev-parse 'HEAD^{tree}')
-  [[ $got == "$TREE" ]] || die "after $n patches the tree is $got, not $TREE (the measured engine's)"
-  log "source: $BASE + $n patches = tree $TREE (the measured engine's)"
+  [[ $got == "$TREE" ]] || die "after $n patches the tree is $got, not $TREE (the tree patches/series.$P pins)"
+  log "source: $BASE + $n patches = tree $TREE (as patches/series.$P pins)"
 }
 
 step_native() {

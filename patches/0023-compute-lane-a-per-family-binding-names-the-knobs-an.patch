@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 16:15:26 +0700
-Subject: [PATCH 23/79] compute lane: a per-family binding names the knobs and
+Subject: [PATCH 23/83] compute lane: a per-family binding names the knobs and
  the built-in tool
 
 core/compute_binding.zig: a Binding is a knob prefix (TF_COMPUTE_LANE by
@@ -134,10 +134,10 @@ index e535a4ae9..d6701de91 100644
      const c = (try parse(&.{
          .{ "TF_X", "1" },                          .{ "TF_X_WORKERS", "3" },    .{ "TF_X_MAX_MS", "2500" },
 diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
-index aa74a15ae..443d1e871 100644
+index 3419f68c4..9418f9d66 100644
 --- a/zig/src/core/engine_api.zig
 +++ b/zig/src/core/engine_api.zig
-@@ -233,6 +233,7 @@ pub const Info = struct {
+@@ -236,6 +236,7 @@ pub const Info = struct {
      /// A byte budget each request promises its caches from as it is admitted (null: none); never beside `admit`.
      ledger: ?Ledger = null,
      compute: ?hold.compute_lane.Config = null, // the family's built-in code execution: replies hold at EOS for results
@@ -146,10 +146,10 @@ index aa74a15ae..443d1e871 100644
      pub const Capability = @import("engine_capabilities.zig").Capability;
  
 diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
-index 9990a4552..af8c6b9cf 100644
+index 741a44528..93d1fc1fd 100644
 --- a/zig/src/families/deepseek_v41/serve_engine.zig
 +++ b/zig/src/families/deepseek_v41/serve_engine.zig
-@@ -131,8 +131,10 @@ pub const Served = struct {
+@@ -148,8 +148,10 @@ pub const Served = struct {
          const window: u32 = @intCast(@min(context orelse m.f.opts.limit, m.f.opts.limit));
          s.host = api.LaneHost.init(gpa, io, &s.core, .{ .benchmark_ranks = m.session.nccl.size, .benchmark_group = m.benchmark_group, .name = "dsv41-cuda", .lanes = m.slots, .context_window = window, .prefill_step = m.gt.prefill_rows });
          s.host.info_.draft_sources = draftSources(m.pass != null, s.cfg.max_copy > 0);
@@ -163,10 +163,10 @@ index 9990a4552..af8c6b9cf 100644
          s.host.on_thread = .{ .ctx = m, .run = bindContext };
          // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
 diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
-index 74fc67b17..f274c74f7 100644
+index 0f75d296b..df7ae00a1 100644
 --- a/zig/src/server/chat.zig
 +++ b/zig/src/server/chat.zig
-@@ -264,7 +264,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+@@ -273,7 +273,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
      };
      srv.release(preparing, null); // a background request waits only while a foreground one prepares
      preparing = false;

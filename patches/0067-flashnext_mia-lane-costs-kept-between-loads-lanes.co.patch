@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 12:44:21 +0700
-Subject: [PATCH 67/79] flashnext_mia: lane costs kept between loads
+Subject: [PATCH 67/83] flashnext_mia: lane costs kept between loads
  (lanes.cost_cache), timed only when a rank has none
 
 A start timed the lane costs every load (2 passes of 4 warm + 9 timed rounds per width, ~39 s). The table now

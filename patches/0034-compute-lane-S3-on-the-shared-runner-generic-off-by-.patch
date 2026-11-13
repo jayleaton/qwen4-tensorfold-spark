@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 21:16:49 +0700
-Subject: [PATCH 34/79] compute lane: S3 on the shared runner (generic, off by
+Subject: [PATCH 34/83] compute lane: S3 on the shared runner (generic, off by
  default)
 
 A compute lane call whose code the runner's frontend accepts runs on the circuit; anything it declines runs in the
@@ -47,13 +47,13 @@ Ported from the dsv41 release line (s86 7b79ef92d).
  create mode 100644 zig/src/core/runner_s3_bench.zig
 
 diff --git a/zig/build/cuda_server_host.zig b/zig/build/cuda_server_host.zig
-index 9d81f82b2..13aa334d4 100644
+index f8445b66b..63dd9f348 100644
 --- a/zig/build/cuda_server_host.zig
 +++ b/zig/build/cuda_server_host.zig
-@@ -58,7 +58,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
-     b.step("test-http-limits-host", "Total HTTP read deadlines and connection admission without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"HTTP limits:"} })).step);
+@@ -68,7 +68,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
      b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
      b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     b.step("test-ocr-host", "OCR route readers, shared page steps and dialects without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"ocr "} })).step);
 -    b.step("test-compute-lane-http-host", "The compute lane through the chat route: a held python call's result forced in").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"compute lane:"} })).step);
 +    b.step("test-compute-lane-http-host", "The compute lane through the chat route: a held python call's result forced in (S3 too)").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "compute lane:", "compute runner:" } })).step);
      b.step("test-runner-server-host", "The in-model runner through the chat route: guide, live records, field anchors").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "runner guide:", "runner commit ask:", "runner projection:", "runner live records:" } })).step);
@@ -937,7 +937,7 @@ index 000000000..65be3573e
 +    try std.testing.expectError(error.BadKnob, s3.open(lanes.dsv41, gpa, &Env.get, true, null, null));
 +}
 diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
-index 2fe462e46..4751619ad 100644
+index 42eb9cdce..b53e9d2d6 100644
 --- a/zig/src/core/engine_api.zig
 +++ b/zig/src/core/engine_api.zig
 @@ -19,6 +19,8 @@ pub const kv_ledger = @import("kv_ledger.zig");
@@ -949,7 +949,7 @@ index 2fe462e46..4751619ad 100644
  /// One image of a request (``Request.images``): the tower's input and the placeholder rows its output replaces.
  pub const Image = lanes.stream.Image;
  
-@@ -241,6 +243,7 @@ pub const Info = struct {
+@@ -244,6 +246,7 @@ pub const Info = struct {
      compute: ?hold.compute_lane.Config = null, // the family's built-in code execution: replies hold at EOS for results
      compute_tool: hold.compute_lane.Tool = .{}, // the built-in tool its binding names (compute_binding.zig)
      runner: ?*runner.Runner = null, // the in-model runner: the server gives it the tokenizer and chats set run_cells
@@ -1293,10 +1293,10 @@ index 000000000..99a87e8ef
 +    return if (same == v.len) 0 else 1;
 +}
 diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
-index 0af4dde9f..a1cacb5bf 100644
+index 305300f92..55f564ac3 100644
 --- a/zig/src/families/deepseek_v41/serve_engine.zig
 +++ b/zig/src/families/deepseek_v41/serve_engine.zig
-@@ -143,6 +143,8 @@ pub const Served = struct {
+@@ -160,6 +160,8 @@ pub const Served = struct {
              s.host.info_.runner = s.host.runner;
              try api.runner.bindings.dsv41.openRoundTrace(&@import("serve_knobs.zig").env); // PREFIX_TRACE
          }
@@ -1306,20 +1306,20 @@ index 0af4dde9f..a1cacb5bf 100644
          s.host.on_thread = .{ .ctx = m, .run = bindContext };
          // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
 diff --git a/zig/src/native/cuda.zig b/zig/src/native/cuda.zig
-index 3d2f4c6eb..1bebb6951 100644
+index 64ae24b87..6d6d2a599 100644
 --- a/zig/src/native/cuda.zig
 +++ b/zig/src/native/cuda.zig
-@@ -444,6 +444,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+@@ -453,6 +453,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
      // TF_RUNNER*: the family's in-model runner, open for the engine's life; the server gives it the tokenizer
      const runner = if (@hasDecl(F, "runner")) if (try F.runner.parse(&cuda_device.knob)) |rc| try api.runner.open(gpa, rc) else null else null;
      if (runner != null) try F.runner.openRoundTrace(&cuda_device.knob);
 +    const compute = if (@hasDecl(F, "compute")) try F.compute.parse(&cuda_device.knob) else null; // replies hold at EOS
 +    // TF_COMPUTE_LANE_RUNNER=1 (S3, off by default): lane calls the circuit can run go there, sharing its circuit
 +    const s3 = if (@hasDecl(F, "compute")) try api.compute_circuit.open(F.compute, gpa, &cuda_device.knob, compute != null, runner, null) else null;
-     try h.serve(io, served.facts, loaded.rows, .{
+     try h.serve(io, served.facts, loaded.rows, familyInfo(F, .{
          .benchmark_ranks = bench.ranks,
          .benchmark_group = bench.group,
-@@ -468,9 +471,10 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
+@@ -477,9 +480,10 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
          .slide_conversations = conversations,
          .readouts = readouts,
          .text_generation = readouts == null, // a readout engine answers its readouts only (Clef's /v1/systemone)
@@ -1328,7 +1328,7 @@ index 3d2f4c6eb..1bebb6951 100644
          .compute_tool = if (@hasDecl(F, "compute")) F.compute.tool else .{},
          .runner = runner,
 +        .compute_runner = s3,
-     }, .{ .ctx = loaded.ctx, .text = F.explain });
+     }), .{ .ctx = loaded.ctx, .text = F.explain });
      opened = true;
      kv_pages.warnCapacity(cache_capacity, o.keep == 0 or o.prompt_cache_gib == 0 or share, if (paged) |p| p.taken else 0, std.log); // TF_KV_SHARE: no copied rows
 diff --git a/zig/src/server/compute_lane_http_test.zig b/zig/src/server/compute_lane_http_test.zig
@@ -1583,10 +1583,10 @@ index a9a737e8e..7d2cea983 100644
 +    try c.put(a, "tool_calls", try json.intValue(a, by_tool));
 +}
 diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
-index 622529d48..7ed362403 100644
+index 90a2c1a7e..c3e6903cd 100644
 --- a/zig/src/server/server.zig
 +++ b/zig/src/server/server.zig
-@@ -166,6 +166,8 @@ pub const Server = struct {
+@@ -175,6 +175,8 @@ pub const Server = struct {
      idle_manager: ?*idle_unload.Manager = null,
      /// The compute lane's sandboxes when the engine serves it (Info.compute); null: code_interpreter is refused.
      compute: ?api.hold.compute_lane.Pool = null,
@@ -1595,7 +1595,7 @@ index 622529d48..7ed362403 100644
      preparing: std.atomic.Value(i64) = .init(0),
      speech_inflight: std.atomic.Value(u32) = .init(0),
      arena: std.heap.ArenaAllocator,
-@@ -212,6 +214,10 @@ pub const Server = struct {
+@@ -221,6 +223,10 @@ pub const Server = struct {
              return srv;
          }
          if (srv.info.compute) |c| srv.compute = try @import("compute_turns.zig").open(srv, c);

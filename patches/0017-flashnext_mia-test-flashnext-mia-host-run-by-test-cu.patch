@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 14:42:16 +0700
-Subject: [PATCH 17/79] flashnext_mia: test-flashnext-mia-host, run by
+Subject: [PATCH 17/83] flashnext_mia: test-flashnext-mia-host, run by
  test-cuda-host
 
 Her module's host tests, roce_mia's, the lane opt-ins her family takes and its native contract
@@ -12,10 +12,10 @@ test as one step; test-cuda-host depends on it instead of running her module in 
  2 files changed, 13 insertions(+), 1 deletion(-)
 
 diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
-index fd8984d10..15f1a1976 100644
+index c397d6895..e126411fa 100644
 --- a/zig/build/cuda.zig
 +++ b/zig/build/cuda.zig
-@@ -345,9 +345,10 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+@@ -350,9 +350,10 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
      @import("pull_tests.zig").add(b, host, .debug, native_modules.engines, mods.core, step);
      b.step("test-save-reopen-host", "Unresolved save through actual checkpoint admission").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = mods.core, .filters = &.{"Save recovery:"} })).step);
      b.step("test-trainer-close-host", "Actual native close and real Flash Next trainer ownership sentinels").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = native, .filters = &.{"Save recovery:"} })).step);

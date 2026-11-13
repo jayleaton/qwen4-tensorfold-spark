@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 21:33:06 +0700
-Subject: [PATCH 56/79] core lanes: the engine's rule takes Config.head_stops,
+Subject: [PATCH 56/83] core lanes: the engine's rule takes Config.head_stops,
  as her 0007 Engine.init gave it
 
 0b619d2e6 carried draft_stops / draft_stops_most into Config.head_stops / head_stops_most and
@@ -23,13 +23,13 @@ Port: head stops in Engine.init (0007 core/lanes/engine.zig hunk) from her 0007 
  2 files changed, 33 insertions(+)
 
 diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
-index 4c2a1c427..127782ac4 100644
+index 3d00bbf0e..451a39727 100644
 --- a/zig/src/core/lanes/engine.zig
 +++ b/zig/src/core/lanes/engine.zig
 @@ -74,6 +74,8 @@ pub const Engine = struct {
-                 .node_probabilities = cfg.node_probabilities,
                  .granted_depth = cfg.granted_depth,
                  .confidence_floor = cfg.draft_confidence,
+                 .plain_streams = cfg.plain_streams,
 +                .head_stops = cfg.head_stops,
 +                .head_stops_most = cfg.head_stops_most,
                  .batch_rows = cfg.batch_rows,

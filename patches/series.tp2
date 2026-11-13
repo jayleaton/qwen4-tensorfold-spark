@@ -1,7 +1,8 @@
-# TP2 engine: upstream TensorFold f212eeabde0fc2ac3234ca947a69cc7714abaca2 plus patches 0001-0076 (git am, in this order).
-# The result's tree equals the measured TP2 engine's (d306dc2fe26e; its published twin 9c6c3d04ce34).
-base f212eeabde0fc2ac3234ca947a69cc7714abaca2
-tree a510d032558224990b0fa0f00b63aa829376c0cb
+# TP2 engine: upstream TensorFold aaac299d1d90c2625e54cb50f3f0d1494c1c33ea plus patches 0001-0080 (git am, in this order): the measured TP2 engine's
+# 76 commits (d306dc2fe26e on f212eeabd) moved onto this base, two lean commits and the shared-settings fix (0077-0079),
+# and 0080 (lean on this base). The result's tree is the rebased line's head (20c1fb1a3).
+base aaac299d1d90c2625e54cb50f3f0d1494c1c33ea
+tree 37866c5820338f59fe5d91c8eed2bfb34e4583af
 0001-notices-MiaAI-Lab-s-dual-Spark-recipe-license-notice.patch
 0002-flashnext_mia-build-module-kernel-images-and-the-TF_.patch
 0003-flashnext_mia-CUDA-kernels-for-MiaAI-Lab-s-Flash-Nex.patch
@@ -78,3 +79,7 @@ tree a510d032558224990b0fa0f00b63aa829376c0cb
 0074-lanes-the-budget-hold-test-s-result-ends-with-its-EO.patch
 0075-lanes-the-budget-hold-harness-ends-a-reply-s-later-h.patch
 0076-runner-no-drawn-digit-right-after-an-owned-inline-in.patch
+0077-lean-lane_host-native-cuda-and-server-under-600-line.patch
+0078-lean-two-test-comments-within-120-columns.patch
+0079-flashnext_mia-the-four-settings-upstream-s-Flash-Nex.patch
+0080-lean-native-cuda-under-600-lines-on-aaac299d1.patch

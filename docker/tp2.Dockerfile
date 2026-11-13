@@ -18,7 +18,7 @@ RUN ! ldd /opt/tensorfold/bin/tensorfold-native /opt/tensorfold/lib/libtfgrammar
     && test -f /opt/tensorfold/compat/libcuda.so.610.43.02 && test -x /opt/tensorfold/bin/tf-compat-entry
 ENV PATH=/opt/tensorfold/bin:$PATH TENSORFOLD_CUDA_KERNELS=/opt/tensorfold/share/tensorfold/cuda/sm121 CUDA_CACHE_PATH=/cache/nv
 ARG ENGINE_TREE=""
-LABEL org.tensorfold.engine-tree="${ENGINE_TREE}" org.tensorfold.base="ashhart/TensorFold f212eeabd + patches/series.tp2" \
+LABEL org.tensorfold.engine-tree="${ENGINE_TREE}" org.tensorfold.base="ashhart/TensorFold aaac299d1 + patches/series.tp2" \
       org.tensorfold.cuda-compat="610.43.02 (Mia / MiaAI-Lab image)" \
       org.tensorfold.credit="engine and Triton kernel set: Mia / MiaAI-Lab dual-Spark recipe dc05c912 (Apache-2.0), /opt/mia-recipe"
 ENTRYPOINT ["tf-compat-entry", "tensorfold-native"]

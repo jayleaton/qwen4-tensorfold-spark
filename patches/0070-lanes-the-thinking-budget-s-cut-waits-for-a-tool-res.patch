@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 17:24:46 +0700
-Subject: [PATCH 70/79] lanes: the thinking budget's cut waits for a tool
+Subject: [PATCH 70/83] lanes: the thinking budget's cut waits for a tool
  result's forced rows
 
 A request thinking_budget with a compute-lane call inside the reasoning failed the reply: the cut could land
@@ -22,10 +22,10 @@ thinking off.
  create mode 100644 zig/src/core/lanes/budget_hold_test.zig
 
 diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
-index c4dafce49..1fe74e47c 100644
+index fdb5b8d26..23ff2daef 100644
 --- a/zig/build/lane_halt_host.zig
 +++ b/zig/build/lane_halt_host.zig
-@@ -20,6 +20,7 @@ pub fn steps(b: *std.Build) void {
+@@ -22,6 +22,7 @@ pub fn steps(b: *std.Build) void {
      b.step("test-runner-abstain-host", "Abstain records: each abstained cell's source, reason and decision point").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner abstain records:"} })).step);
      b.step("test-settle-fire-host", "PREFIX_SYNC_GRAPH on the fake target: fires settled at their trigger never hold").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"settled fires:"} })).step);
      b.step("test-forced-rows-host", "A held fire's forced result lands whole on the fake target: no hold inside it").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"forced rows:"} })).step);
@@ -193,10 +193,10 @@ index 000000000..c485cdcc2
 +    }
 +}
 diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
-index f0d9ef0a9..ef0708136 100644
+index 5b9b987e7..5b2e26f6b 100644
 --- a/zig/src/core/lanes/lanes.zig
 +++ b/zig/src/core/lanes/lanes.zig
-@@ -72,6 +72,7 @@ test {
+@@ -75,6 +75,7 @@ test {
      _ = @import("fire_replay_test.zig");
      _ = @import("settle_fire_test.zig");
      _ = @import("forced_rows_hold_test.zig");
