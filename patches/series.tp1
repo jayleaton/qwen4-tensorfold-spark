@@ -1,8 +1,9 @@
-# TP1 engine: upstream TensorFold aaac299d1d90c2625e54cb50f3f0d1494c1c33ea plus every patch, 0001-0084 (git am, in this order): the TP2 set,
-# the three runner commits of the measured TP1 engine (b62876185195), and 0084 (the runner receipt lists the digit stops
-# that fired). Up to 0083 the tree is the rebased line's head (187e28a03); 0084 adds a receipt field only.
+# TP1 engine: upstream TensorFold aaac299d1d90c2625e54cb50f3f0d1494c1c33ea plus every patch, 0001-0085 (git am, in this order): the TP2 set,
+# the three runner commits of the measured TP1 engine (b62876185195), 0084 (the runner receipt lists the digit stops
+# that fired) and 0085 (media the server cannot read becomes a text note). Up to 0083 the tree is the rebased line's
+# head (187e28a03); 0084 adds a receipt field only; 0085 changes only how the server treats media parts.
 base aaac299d1d90c2625e54cb50f3f0d1494c1c33ea
-tree 8fcd7157e99d7f37688233e83a604fac38735336
+tree 1cdd1af48e9cc90fedf8a94769d08194e94de736
 0001-notices-MiaAI-Lab-s-dual-Spark-recipe-license-notice.patch
 0002-flashnext_mia-build-module-kernel-images-and-the-TF_.patch
 0003-flashnext_mia-CUDA-kernels-for-MiaAI-Lab-s-Flash-Nex.patch
@@ -87,3 +88,4 @@ tree 8fcd7157e99d7f37688233e83a604fac38735336
 0082-runner-no-drawn-word-character-glued-to-an-owned-spa.patch
 0083-runner-an-inline-span-inside-an-open-quotation-is-qu.patch
 0084-runner-the-reply-s-receipt-lists-the-digit-stops-tha.patch
+0085-server-a-text-only-server-notes-the-media-it-cannot-.patch
