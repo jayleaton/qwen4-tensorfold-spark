@@ -50,10 +50,12 @@ resolutions keep upstream's code and ours side by side. Four commits are new on 
   takes `0` or `1` only (it used to take `on` and `off` too). No profile sets any of them;
 - 0080 keeps `native/cuda.zig` under the limit on this base.
 
-**Measured results ran the `f212eeabd` builds:** TP2 `d306dc2fe26e` and TP1 `b62876185195`. On this base only the
-CPU gates ran (native build, host test suites, `lean` and `zig fmt` against upstream, the macOS compile), plus the
-boot smoke named under [Measured results](#measured-results). The benchmarks were not rerun. To build the measured
-trees exactly, check out the recipe at `e2aca8b`.
+**Re-gated on this base 2026-11-13:** the images `scripts/build.sh` builds from this recipe ran the same release gates
+as the `f212eeabd` builds (TP2 `d306dc2fe26e`, TP1 `b62876185195`), with the same boot lines and env files. On every
+gate with fixed sampling the replies are the same, byte for byte or token count for token count. TP2 decode is equal
+or up to 6% faster. One gate has no f212 figure to compare with: an agent task run in 8 sessions instead of 5, which
+TP2 passed 7/8 twice (see the TP2 rows under [Measured results](#measured-results)). The
+`f212eeabd` trees remain buildable from the recipe at `e2aca8b`.
 
 ## Prerequisites
 
@@ -247,7 +249,10 @@ thinking on.
 
 | Date | Engine | Result |
 | --- | --- | --- |
-| 2026-11-13 | `20c1fb1a3` (the tree `patches/series.tp2` makes on `aaac299d1`) | boot smoke only, the image built with `scripts/build.sh tp2` and served with section 4's lines: ready 132 s after rank 0 started; section 5's curl answers 30584 (7^22 mod 1000003); thinking on, off, streamed and a client tool call pass; `tool_choice` required, named and any pass; both ranks on the CUDA 13.3 compat driver. Benchmarks not rerun. |
+| 2026-11-13 | `20c1fb1a3` (the tree `patches/series.tp2` makes on `aaac299d1`, recipe `f0002f9`) | release gates rerun on the image `scripts/build.sh tp2` builds: computation-heavy subset 92/120 at 731 tokens a task, median 12.1 s, every task's token count equal to `d306dc2fe`'s |
+| 2026-11-13 | `20c1fb1a3` | long-integer reasoning set 9/9, no digit run past the exact value, every reply token-identical to `d306dc2fe`'s; thinking-off set 17/20, all 20 replies byte-identical to `d306dc2fe`'s; lane categories 180/180, all 180 replies byte-identical; thinking-budget probe 12/12; `tool_choice` required, named and any pass |
+| 2026-11-13 | `20c1fb1a3` | the agent-client task (7^222 mod 1000003 and the sum of squares 1..2026 to a file, see `d306dc2fe` below) in 8 fresh opencode sessions, run twice: 7/8 and 7/8; the first 5 sessions (the form `d306dc2fe` ran) 10/10. Each miss is the model's own sum of squares written without a tool call; 7^222 mod 1000003 is exact in all 16. `d306dc2fe` has no 8-session run to compare with |
+| 2026-11-13 | `20c1fb1a3` | boot smoke, the image built with `scripts/build.sh tp2` and served with section 4's lines: ready 132 s after rank 0 started; section 5's curl answers 30584 (7^22 mod 1000003); thinking on, off, streamed and a client tool call pass; `tool_choice` required, named and any pass; both ranks on the CUDA 13.3 compat driver |
 | 2026-11-12 | `d306dc2fe` (the tree `patches/series.tp2` made on `f212eeabd`, recipe `e2aca8b`) | an agent-client task writing 7^222 mod 1000003 and the sum of squares 1..2026 to a file, in opencode, 5 fresh sessions: 5/5 exact (22-66 s each); with `TF_RUNNER_INLINE_MARK=0` on the same image 4/5 |
 | 2026-11-12 | `d306dc2fe` | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with no reasoning digit run past the exact value; with the mark off 8/9 (one reply ran away, 10,402 tokens) |
 | 2026-11-12 | `d306dc2fe` | computation-heavy subset 92/120 at 731 tokens a task, median 12.2 s |
@@ -266,6 +271,7 @@ Mia's decode protocol, tokens/s at 1 / 2 / 4 / 8 / 16 streams, 2026-11-10 and 11
 | her original recipe image (vision off) | 69.6 | 103.1 | 156.4 | 233.2 | 372.5 |
 | the port, runner and lane off | 70.1 | 103.5 | 158.0 | 238.5 | 380.6 |
 | this profile (rerun, both nodes at or below 86 C at each start) | 69.0 | 100.9 | 154.7 | 233.6 | 362.6 |
+| this profile on `20c1fb1a3` (2026-11-13, the `f0002f9` image, fresh boot, both nodes at or below 86 C) | 69.8 | 102.1 | 158.9 | 235.9 | 383.2 |
 
 Her published figures are 67.4 / - / 152.2 / - / 390.1. With the runner and lane, a decode round costs about 6% more
 at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decoded 69.97 / 155.68 / 362.16 at 1 / 4 /
@@ -284,7 +290,9 @@ at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decod
 | 2026-11-13 | `b62876185` | computation-heavy subset 95/120 at 900 tokens a task |
 | 2026-11-13 | `b62876185` | lane categories 179/180; check subset 68/72; thinking-off set 18/20, all 20 replies identical to `501674d7f`'s |
 | 2026-11-13 | `b62876185` | a 12-prompt thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass |
-| 2026-11-13 | `187e28a03` (the tree `patches/series.tp1` makes on `aaac299d1`) | boot smoke only, the image built with `scripts/build.sh tp1` and served with section 3's line: ready 181 s; section 5's curl answers 30584; thinking on, off, streamed and a client tool call pass; a computation prompt ran code in the lane (2 calls) and ended with its answer; `tool_choice` required, named and any pass; the CUDA 13.3 compat driver is on. Benchmarks not rerun. |
+| 2026-11-13 | `187e28a03` (the tree `patches/series.tp1` makes on `aaac299d1`, recipe `f0002f9`) | release gates rerun on the image `scripts/build.sh tp1` builds, every reply the same as `b62876185`'s: computation-heavy subset 95/120 at 900 tokens a task (all 120 token counts equal); long-integer reasoning set 9/9 with 0 digit runaways (all 9 token-identical) |
+| 2026-11-13 | `187e28a03` | lane categories 179/180 and check subset 68/72, all 252 replies byte-identical to `b62876185`'s; thinking-off set 18/20, all 20 identical; thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass (the agent-client task 8/8) |
+| 2026-11-13 | `187e28a03` | boot smoke, the image built with `scripts/build.sh tp1` and served with section 3's line: ready 181 s; section 5's curl answers 30584; thinking on, off, streamed and a client tool call pass; a computation prompt ran code in the lane (2 calls) and ended with its answer; `tool_choice` required, named and any pass; the CUDA 13.3 compat driver is on |
 
 Decode on `c8e930375`: 48.8 / 47.8 / 53.8 tokens/s at 841 / 6k / 24k-token prompts, 85.1 with 4 at once. With the
 compat driver: 53.6 / 49.5 / 55.3, 93.6 with 4 at once. Single cells move several percent between boots.
