@@ -17,7 +17,7 @@ calls on that runner. The Qwen4 profiles are placeholders: no Qwen4 checkpoint h
 
 | You have | Profile | Patches | Checkpoint |
 | --- | --- | --- | --- |
-| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0084) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
+| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0085) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context, images |
 | **two linked Sparks** | **TP2**: [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `patches/series.tp2` (0001-0080) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4, 1,048,576 context |
 
 Then follow the steps below: [build the image](#2-build-the-image), [serve on one Spark](#3-serve-on-one-spark-tp1)
@@ -36,6 +36,7 @@ in `CHECKPOINT` (`repo@revision`).
 | Upstream | [`ashhart/TensorFold`](https://github.com/ashhart/TensorFold) at `aaac299d1d90c2625e54cb50f3f0d1494c1c33ea` (the `vendor/TensorFold` submodule, `config/tensorfold.rev`), unmodified |
 | `patches/0001`-`0080` | the TP2 engine: Mia's dual-Spark Flash-Next engine as `flashnext_mia` (0002-0012: her own commits, authored MiaAI-Lab), then the compute lane, the in-model runner and its frontend, the call gates, `tool_choice`, the thinking-budget fixes, lane cost keeping and the runner's digit stop (0001-0076); then, for this base, three lean commits and one settings fix (0077-0080, below) |
 | `patches/0081`-`0084` | four runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, the quoted rule (no engine value inside an open quotation), and the reply's runner receipt (`tensorfold.runner`) listing the digit stops that fired (`stops`) |
+| `patches/0085` | for TP1: media the server cannot read (an image on a text-only server, audio, images past `--vision-max-images`) becomes a text note in place instead of an HTTP 400; `--media-fallback refuse` keeps the 400 |
 | `patches/series.tp1`, `series.tp2` | which patches each profile applies, in order, and the tree sha the result must have |
 
 The patches are a `git format-patch` series; each keeps its original author. `scripts/build.sh` applies them with
@@ -129,8 +130,12 @@ The script runs three steps; `scripts/build.sh tp1 source|native|image` runs one
 3. **image:** the Docker layers in [`docker/`](docker), with no compile in Docker:
    - **Serving base** ([`docker/tp1.Dockerfile`](docker/tp1.Dockerfile) / [`docker/tp2.Dockerfile`](docker/tp2.Dockerfile)):
      NVIDIA's CUDA 13.0.1 base, NCCL, ibverbs, python3 (the compute lane's interpreter), `tensorfold-native` and
-     `libtfgrammar`. For TP2 it also carries **Mia's captured Triton kernel set**: her engine replays these compiled
-     kernels (`aot.json` and `cubins/`). They are copied byte for byte from her recipe's image (by default her published
+     `libtfgrammar`. TP1's also carries what `--vision` loads: cuBLASLt (NVIDIA's `libcublas-13-0`, the image tower's
+     GEMMs) and the two image decoders the engine pins, `libturbojpeg` from libjpeg-turbo 3.1.4.1 and `libwebpdecoder`
+     from libwebp 1.6.0. The engine refuses any other release of either, so the native step builds them from their
+     release archives (checked by sha256) into `lib/`, and the image step fails unless `tensorfold-native capabilities
+     --json` finds cuBLASLt and calls both decoders usable. TP2's carries **Mia's captured Triton kernel set**
+     instead: her engine replays these compiled kernels (`aot.json` and `cubins/`). They are copied byte for byte from her recipe's image (by default her published
      image `ghcr.io/miaai-lab/qwen3.8-flash-dual-dgx-sparks-tensorfold`, by digest; `MIA_IMAGE=` names another) and
      checked against [`docker/mia-kernels.sha256`](docker/mia-kernels.sha256): 421 cubins and `aot.json`, the
      measured image's kernels (its copy came from her local rebuild and differs only in debug line bytes). Her
@@ -160,10 +165,24 @@ source profiles/provisional/qwen38-flash-next-tp1-tool-full.env
 grep '^TF_' profiles/provisional/qwen38-flash-next-tp1-tool-full.env > tf.env
 docker run -d --name qwen38fn --init --gpus all --ipc=host --network host --ulimit memlock=-1 --env-file tf.env \
   -v "$MODEL_DIR":/model:ro "$IMAGE" \
-  serve /model --host 127.0.0.1 --port 8000 --context 65536 --thinking-budget 8192
+  serve /model --name Qwen3.8-Flash-Next-TF --host 127.0.0.1 --port 8000 --context 65536 --thinking-budget 8192 \
+  --vision --vision-max-images 4 --vision-image-tokens 4096 --compact-at auto
 ```
 
-The server listens on `127.0.0.1:8000`.
+The server listens on `127.0.0.1:8000` and serves the model as `Qwen3.8-Flash-Next-TF`.
+
+- **Images** (`--vision`): PNG, JPEG and WebP, in chat, Responses and Anthropic messages and in tool results. At most 4
+  images a request, sharing 4,096 image tokens (Flash Next's ceiling: a larger `--vision-image-tokens` stops the boot
+  with `BadImageLimits`). Older images past 4 become a text note, the newest kept. `/v1/models` shows
+  `"vision": true`. Without `--vision` an image becomes a text note, and the model says it cannot see it.
+- **Compaction** (`--compact-at auto`): a conversation that outgrows the window has its older messages folded into a
+  note instead of being refused. A single message larger than the window still gets an error that names both sizes.
+- **Longer context:** the engine fits as many streams as memory allows: 8 at 65,536, 4 at 131,072 (`--context 131072
+  --parallel 4`), 2 at 262,144. Decode speed is the same at all three. For one agent user, 131,072 with
+  `--parallel 4` is the measured long setting: a 95K-token conversation's next turn resumed from the prompt cache in
+  0.4 s. At 262,144 the measured boot set `--prompt-cache-gib 4`, which cannot hold a 190K-token state (about
+  5.7 GiB), so every turn prefilled again (107 s). The engine sized its own cache at 6.2-8.0 GiB on the other boots;
+  leave the flag out or give it 8 or more. That setting was not measured at 262,144.
 
 ### 4. Serve on two Sparks (TP2)
 
@@ -226,7 +245,8 @@ curl -s http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/
 ```
 
 The first call lists the model. The second returns a chat completion: thinking is on, so the reasoning comes first
-and the answer after it. On TP1 the served model name is the one `/v1/models` lists; use that name in `model`.
+and the answer after it. On TP1 the served model name is the one `/v1/models` lists (`Qwen3.8-Flash-Next-TF` with
+section 3's line); use that name in `model`.
 
 ### Turn the lanes off
 
@@ -238,6 +258,57 @@ grep -vE '^(TF_COMPUTE_LANE|TF_RUNNER)' tf.env > tf-lanes-off.env    # then --en
 ```
 
 The same image serves either way.
+
+### 6. Use it from opencode
+
+A provider entry for [opencode](https://opencode.ai) 2.2.7 against this server. Use opencode's native provider form
+(`providers`, `package`, `settings`, `capabilities`): the older form (`provider`, `npm`, `options`, `tool_call`) still
+loads, but opencode 2.2.7 drops its `capabilities.input`, so a text-only setting there has no effect (checked with
+`opencode debug config`).
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "spark": {
+      "name": "TensorFold on DGX Spark",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "settings": { "baseURL": "http://127.0.0.1:8000/v1", "apiKey": "none", "timeout": 3600000 },
+      "models": {
+        "Qwen3.8-Flash-Next-TF": {
+          "name": "Qwen3.8-Flash-Next (TP1)",
+          "capabilities": { "tools": true, "input": ["text", "image"], "output": ["text"] },
+          "limit": { "context": 65536, "output": 16384 }
+        }
+      }
+    }
+  },
+  "model": "spark/Qwen3.8-Flash-Next-TF",
+  "small_model": "spark/Qwen3.8-Flash-Next-TF",
+  "compaction": { "auto": true, "buffer": 24576, "keep": { "tokens": 8000 } },
+  "tool_output": { "max_lines": 1200, "max_bytes": 32768 }
+}
+```
+
+- **Model id:** the one `/v1/models` lists (section 3's line names it `Qwen3.8-Flash-Next-TF` with `--name`).
+- **`capabilities.input`:** `["text", "image"]` only for a server started with `--vision` (`/v1/models` then shows
+  `"vision": true`); for a text-only server (TP2, or TP1 without `--vision`) set `["text"]`, and opencode replaces an
+  image (for example a screenshot its `read` tool returns) with its own note before sending. Without the key opencode
+  assumes text and images.
+- **`limit.context`:** the served window, `/v1/models`' `context_length` (`--context`). If it is larger than the
+  server's window, opencode compacts too late and the server refuses the request.
+- **`compaction`:** opencode compacts when its estimate of the conversation passes `limit.context` minus `buffer`.
+  Its estimate counts about four characters a token, which undercounts code, tool schemas and the chat template, so
+  keep `buffer` above the reply size you allow (`limit.output`) with some room: 24,576 for a 16,384-token reply at 64K.
+  `keep.tokens` is the recent tail a summary keeps.
+- **`tool_output`:** caps each tool result opencode puts in the conversation (lines and bytes; the full output is
+  saved to a file and the model gets a preview and its path). 32 KiB is about 8-10K tokens.
+- **One state root per client.** opencode keeps its sessions in a SQLite database under `XDG_DATA_HOME` and
+  `XDG_STATE_HOME` (default `~/.local/share/opencode` and `~/.local/state/opencode`). Two opencode processes started
+  separately with the same roots can collide on that database (`database is locked`), and opencode may then report an
+  earlier, unrelated error as the failure. Give each concurrently running client its own roots, for example
+  `XDG_DATA_HOME=$PWD/.oc/data XDG_STATE_HOME=$PWD/.oc/state opencode run ...`, or run one opencode server and attach
+  the clients to it.
 
 ## Measured results
 
@@ -294,6 +365,9 @@ at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decod
 | 2026-11-13 | `187e28a03` | lane categories 179/180 and check subset 68/72, all 252 replies byte-identical to `b62876185`'s; thinking-off set 18/20, all 20 identical; thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass (the agent-client task 8/8) |
 | 2026-11-13 | `187e28a03` | boot smoke, the image built with `scripts/build.sh tp1` and served with section 3's line: ready 181 s; section 5's curl answers 30584; thinking on, off, streamed and a client tool call pass; a computation prompt ran code in the lane (2 calls) and ended with its answer; `tool_choice` required, named and any pass; the CUDA 13.3 compat driver is on |
 | 2026-11-14 | tree `8fcd7157e99d` (`patches/series.tp1` with 0084, on `aaac299d1`) | boot of the image `scripts/build.sh tp1` builds: ready 181 s; 3 seeded replays of an opencode request each token-identical to the `187e28a03` image's; the two whose reasoning hit the 1,024-digit run cap list `"stops":{"after_value":0,"after_mark":0,"run_cap":1}` in `tensorfold.runner`, the third lists no `stops` |
+| 2026-11-14 | `fbf492c17190` (0001-0083 plus the media patch, now 0085; section 3's line) | images: 7 of 8 images with known answers right in PNG, JPEG and both WebP kinds, with drafts on and off (byte-identical); the eighth, the number 4817, read as 4117 except in JPEG. A screenshot returned by a tool, opencode 2.2.7 reading a PNG, Responses and Anthropic APIs, a 3-turn resend and 2 image streams at once all answer |
+| 2026-11-14 | `fbf492c17190` | text replies token-identical with `--vision --compact-at auto` and without (6 fixed prompts); compaction: the archived 0070 opencode compaction request finishes with stop, a 320,000-character tool result continues, an 84K-token message gets an error naming both sizes; without `--vision`, images in chat, a tool result, Responses and Anthropic all answer 200 |
+| 2026-11-14 | `fbf492c17190` | peak memory 86.3 GiB text-only, 88.9 GiB with vision (8 streams at 65,536 either way); 131,072 `--parallel 4` 88.4 GiB, 262,144 `--parallel 2` 87.0 GiB; decode 74.9-75.1 tokens/s on a 1.1K-token prompt and 64.8-65.3 with 2 at once on all four; a needle found at 58K, 95K and 190K tokens |
 
 Decode on `c8e930375`: 48.8 / 47.8 / 53.8 tokens/s at 841 / 6k / 24k-token prompts, 85.1 with 4 at once. With the
 compat driver: 53.6 / 49.5 / 55.3, 93.6 with 4 at once. Single cells move several percent between boots.
@@ -303,7 +377,10 @@ The full measurement notes, with every arm, are the comment blocks in each profi
 ## Known limits
 
 - **Text only on TP2.** Mia's patch 0009 (Python vision) is not ported. The TP2 port refuses `--vision`; her vision
-  settings stay in the profile as measured.
+  settings stay in the profile as measured. TP2 does not carry 0085 either, so it answers an image part with HTTP 400:
+  set opencode's `capabilities.input` to `["text"]` for it (section 6).
+- **TP1 images: 4 a request, 4,096 image tokens.** Flash Next's image tower takes no more. Text in images can be
+  misread: one plain number (4817) came back as 4117 in three of four encodings.
 - **No structured output on TP2.** The TP2 engine answers `response_format` (JSON object or JSON schema) and the
   `guided_*` fields with HTTP 400 ("not supported by this engine yet"). Forced tool calls (`tool_choice` required,
   named, any) work. TP1 serves both.
