@@ -53,9 +53,9 @@ resolutions keep upstream's code and ours side by side. Four commits are new on 
 **Re-gated on this base 2026-11-13:** the images `scripts/build.sh` builds from this recipe ran the same release gates
 as the `f212eeabd` builds (TP2 `d306dc2fe26e`, TP1 `b62876185195`), with the same boot lines and env files. On every
 gate with fixed sampling the replies are the same, byte for byte or token count for token count. TP2 decode is equal
-or up to 6% faster. One gate has no f212 figure to compare with: an agent task run in 8 sessions instead of 5, which
-TP2 passed 7/8 twice (see the TP2 rows under [Measured results](#measured-results)). The
-`f212eeabd` trees remain buildable from the recipe at `e2aca8b`.
+or up to 6% faster. An agent task run in 8 fresh sessions came out 7/8 twice on this base and 7/8 on `d306dc2fe`
+(see the TP2 rows under [Measured results](#measured-results) and [Known limits](#known-limits)). The `f212eeabd`
+trees remain buildable from the recipe at `e2aca8b`.
 
 ## Prerequisites
 
@@ -251,7 +251,7 @@ thinking on.
 | --- | --- | --- |
 | 2026-11-13 | `20c1fb1a3` (the tree `patches/series.tp2` makes on `aaac299d1`, recipe `f0002f9`) | release gates rerun on the image `scripts/build.sh tp2` builds: computation-heavy subset 92/120 at 731 tokens a task, median 12.1 s, every task's token count equal to `d306dc2fe`'s |
 | 2026-11-13 | `20c1fb1a3` | long-integer reasoning set 9/9, no digit run past the exact value, every reply token-identical to `d306dc2fe`'s; thinking-off set 17/20, all 20 replies byte-identical to `d306dc2fe`'s; lane categories 180/180, all 180 replies byte-identical; thinking-budget probe 12/12; `tool_choice` required, named and any pass |
-| 2026-11-13 | `20c1fb1a3` | the agent-client task (7^222 mod 1000003 and the sum of squares 1..2026 to a file, see `d306dc2fe` below) in 8 fresh opencode sessions, run twice: 7/8 and 7/8; the first 5 sessions (the form `d306dc2fe` ran) 10/10. Each miss is the model's own sum of squares written without a tool call; 7^222 mod 1000003 is exact in all 16. `d306dc2fe` has no 8-session run to compare with |
+| 2026-11-13 | `20c1fb1a3` | the agent-client task (7^222 mod 1000003 and the sum of squares 1..2026 to a file, see `d306dc2fe` below) in 8 fresh opencode sessions, run twice: 7/8 and 7/8; the first 5 sessions (the form `d306dc2fe` ran) 10/10. Each miss is the model's own sum of squares written without a tool call; 7^222 mod 1000003 is exact in all 16. `d306dc2fe` on the same 8 sessions (2026-11-14): 7/8, its miss an empty reply |
 | 2026-11-13 | `20c1fb1a3` | boot smoke, the image built with `scripts/build.sh tp2` and served with section 4's lines: ready 132 s after rank 0 started; section 5's curl answers 30584 (7^22 mod 1000003); thinking on, off, streamed and a client tool call pass; `tool_choice` required, named and any pass; both ranks on the CUDA 13.3 compat driver |
 | 2026-11-12 | `d306dc2fe` (the tree `patches/series.tp2` made on `f212eeabd`, recipe `e2aca8b`) | an agent-client task writing 7^222 mod 1000003 and the sum of squares 1..2026 to a file, in opencode, 5 fresh sessions: 5/5 exact (22-66 s each); with `TF_RUNNER_INLINE_MARK=0` on the same image 4/5 |
 | 2026-11-12 | `d306dc2fe` | long-integer reasoning set (7^222; 3^300 and 2^500; 13^150; three seeds each): 9/9 with no reasoning digit run past the exact value; with the mark off 8/9 (one reply ran away, 10,402 tokens) |
@@ -317,6 +317,10 @@ The full measurement notes, with every arm, are the comment blocks in each profi
   ends in ` @engine`. Without it Qwen extended spliced big integers with invented digits and once overrode the engine's
   right value. The model sometimes glues a word to the mark (`@engineer`) in its reasoning; TP1 leaves that alone
   (`TF_RUNNER_MARK_STOP=0`) because cutting it cost a right answer. The default is still under decision.
+- **Agent sessions miss about 1 in 8 on TP2.** In an opencode task that asks for 7^222 mod 1000003 and the sum of the
+  squares 1..2026 in a file, without a shell command, three runs of 8 fresh sessions each scored 7/8, on `d306dc2fe`
+  and on the current base alike. The misses: twice the model wrote a wrong sum of squares with no tool call; once a
+  session ended with an empty reply. The modular power was right in every session that answered.
 - **Runner in thinking chats only.** A thinking-off chat gets no runner session and no engine-owned values. The compute
   lane also stays out of `tool_choice` required or named calls and of requests with `max_tokens` under 1024.
 - **Thinking budget.** Both tool-full profiles close a think block after 8192 tokens unless the request sets
