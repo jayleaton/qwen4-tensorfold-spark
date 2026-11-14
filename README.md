@@ -6,7 +6,7 @@ Support me here: https://buymeacoffee.com/jayleaton
 
 **This repo is the recipe (profiles, patches, build script and docs), not the engine.** The engine is
 [TensorFold](https://github.com/ashhart/TensorFold), written in Zig: the pinned, unmodified submodule
-`vendor/TensorFold` plus the 83 patches in [`patches/`](patches), applied when you build the image. The Python files
+`vendor/TensorFold` plus the 84 patches in [`patches/`](patches), applied when you build the image. The Python files
 here are only this repo's own checks.
 
 The profiles serve Qwen3.8-Flash-Next, the released preview of the Qwen4 architecture, with the engine's compute lane
@@ -17,7 +17,7 @@ calls on that runner. The Qwen4 profiles are placeholders: no Qwen4 checkpoint h
 
 | You have | Profile | Patches | Checkpoint |
 | --- | --- | --- | --- |
-| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0083) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
+| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0084) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
 | **two linked Sparks** | **TP2**: [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `patches/series.tp2` (0001-0080) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4, 1,048,576 context |
 
 Then follow the steps below: [build the image](#2-build-the-image), [serve on one Spark](#3-serve-on-one-spark-tp1)
@@ -35,7 +35,7 @@ in `CHECKPOINT` (`repo@revision`).
 | --- | --- |
 | Upstream | [`ashhart/TensorFold`](https://github.com/ashhart/TensorFold) at `aaac299d1d90c2625e54cb50f3f0d1494c1c33ea` (the `vendor/TensorFold` submodule, `config/tensorfold.rev`), unmodified |
 | `patches/0001`-`0080` | the TP2 engine: Mia's dual-Spark Flash-Next engine as `flashnext_mia` (0002-0012: her own commits, authored MiaAI-Lab), then the compute lane, the in-model runner and its frontend, the call gates, `tool_choice`, the thinking-budget fixes, lane cost keeping and the runner's digit stop (0001-0076); then, for this base, three lean commits and one settings fix (0077-0080, below) |
-| `patches/0081`-`0083` | three runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, and the quoted rule (no engine value inside an open quotation) |
+| `patches/0081`-`0084` | four runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, the quoted rule (no engine value inside an open quotation), and the reply's runner receipt (`tensorfold.runner`) listing the digit stops that fired (`stops`) |
 | `patches/series.tp1`, `series.tp2` | which patches each profile applies, in order, and the tree sha the result must have |
 
 The patches are a `git format-patch` series; each keeps its original author. `scripts/build.sh` applies them with
