@@ -7,7 +7,9 @@
 #   source  build/PROFILE/src: a clean copy of the submodule at the pinned commit with patches/series.PROFILE applied
 #           by `git am`; fails unless the result's tree is the one the series file pins (series.tpN, line `tree`)
 #   native  build/PROFILE/out/{bin,lib}: zig build check-native-cuda-host, then tensorfold-native (CUDA sm_121,
-#           ReleaseFast, stripped), tf-runner-frontend-check and libtfgrammar (xgrammar v0.2.8)
+#           ReleaseFast, stripped), tf-runner-frontend-check and libtfgrammar (xgrammar v0.2.8); for TP1 also the
+#           image decoders the engine pins for --vision, built from their release archives (sha256-checked):
+#           libturbojpeg (libjpeg-turbo 3.1.4.1) and libwebpdecoder (libwebp 1.6.0), into lib/
 #   image   the Docker layers (docker/): the serving base, the in-model runner layer, and for TP1 the CUDA
 #           forward-compatibility layer. TP2's base also carries Mia / MiaAI-Lab's Triton kernel set and the compat
 #           driver, copied from her image. Final tag: IMAGE_PREFIX:PROFILE (default qwen4-tensorfold:tp1 / :tp2)
@@ -38,6 +40,12 @@ JOBS=${JOBS:-1}
 XGRAMMAR=${XGRAMMAR:-$ROOT/build/xgrammar}
 XGRAMMAR_REPO=https://github.com/mlc-ai/xgrammar.git
 XGRAMMAR_COMMIT=97787376faee5ed8466cfad57c99855e4ce2f6aa # v0.2.8
+# The image decoders TP1's --vision loads (the engine refuses any other release: docs/vision.md, JPEG input):
+# name, release archive, its sha256.
+JPEG_TURBO=(libjpeg-turbo-3.1.4.1 https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.4.1/libjpeg-turbo-3.1.4.1.tar.gz
+  ecae8008e2cc9ade2f2c1bb9d5e6d4fb73e7c433866a056bd82980741571a022)
+WEBP=(libwebp-1.6.0 https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz
+  e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564)
 MIA_IMAGE=${MIA_IMAGE:-ghcr.io/miaai-lab/qwen3.8-flash-dual-dgx-sparks-tensorfold@sha256:e188128ddabdc67ac02c05781f5c0c6b348db5f050cac297861d82b7f086e18c}
 COMPAT_IMAGE=${COMPAT_IMAGE:-nvcr.io/nvidia/pytorch@sha256:2140e699b3beaf7f96a0081fd9c9406bc3832b435cdb60dfa2d261f7d2f34a1c}
 COMPAT_PATH=/usr/local/cuda-13.3/compat/lib.real
@@ -101,6 +109,33 @@ step_native() {
   [[ -f $p ]] || die "no libtfgrammar.so in $W/grammar"
   cp "$p" "$OUT/lib/"
   (cd "$OUT" && sha256sum bin/tensorfold-native bin/tf-runner-frontend-check lib/libtfgrammar.so)
+  [[ $P == tp1 ]] && step_codecs
+  return 0
+}
+
+codec() { # NAME URL SHA256 CMAKE-ARGS... -> build/codecs/NAME/install: the release archive, checked, built (Release)
+  local name=$1 url=$2 sum=$3 dir=$ROOT/build/codecs/$1
+  shift 3
+  [[ -e $dir ]] && die "$dir exists: remove it for a fresh decoder build"
+  mkdir -p "$dir"
+  curl -fsSL --retry 3 -o "$dir/src.tar.gz" "$url" || die "could not download $url"
+  echo "$sum  $dir/src.tar.gz" | sha256sum -c --quiet - || die "$url: sha256 is not $sum"
+  tar -xzf "$dir/src.tar.gz" -C "$dir"
+  cmake -S "$dir/$name" -B "$dir/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$dir/install" \
+    -DCMAKE_INSTALL_LIBDIR=lib "$@" > "$dir/cmake.log" || die "$name: cmake failed ($dir/cmake.log)"
+  cmake --build "$dir/build" -j"$JOBS" > "$dir/build.log" || die "$name: build failed ($dir/build.log)"
+  cmake --install "$dir/build" > /dev/null || die "$name: install failed"
+}
+
+step_codecs() { # TP1's image decoders into $OUT/lib under the file names the engine loads
+  codec "${JPEG_TURBO[@]}" -DENABLE_STATIC=OFF -DWITH_TURBOJPEG=ON -DWITH_JAVA=OFF -DWITH_TOOLS=OFF -DWITH_TESTS=OFF
+  codec "${WEBP[@]}" -DBUILD_SHARED_LIBS=ON -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF \
+    -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF \
+    -DWEBP_BUILD_LIBWEBPMUX=OFF -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF
+  cp -L "$ROOT/build/codecs/${JPEG_TURBO[0]}/install/lib/libturbojpeg.so.0" "$OUT/lib/"
+  cp -L "$ROOT/build/codecs/${WEBP[0]}/install/lib/libwebpdecoder.so.3" "$OUT/lib/"
+  grep -aq 'libjpeg-turbo version 3.1.4.1 ' "$OUT/lib/libturbojpeg.so.0" || die "libturbojpeg.so.0 is not 3.1.4.1"
+  (cd "$OUT" && sha256sum lib/libturbojpeg.so.0 lib/libwebpdecoder.so.3)
 }
 
 copy_out() { # IMAGE PATH DEST: PATH out of IMAGE (pulled if missing)
@@ -147,6 +182,12 @@ step_image() {
   local run=(docker run ${RUN_FLAGS[@]+"${RUN_FLAGS[@]}"} --rm --network none -e NVIDIA_VISIBLE_DEVICES=void -e CUDA_VISIBLE_DEVICES=
     --entrypoint /opt/tensorfold/bin/tf-compat-entry "$TAG" /bin/true)
   [[ $("${run[@]}" 2>&1) == *'host CUDA driver'* ]] || die "$TAG: tf-compat-entry check failed"
+  if [[ $P == tp1 ]]; then # --vision's libraries: cuBLASLt found, the JPEG and WebP decoders usable (pinned releases)
+    local caps=(docker run ${RUN_FLAGS[@]+"${RUN_FLAGS[@]}"} --rm --network none -e NVIDIA_VISIBLE_DEVICES=void
+      -e CUDA_VISIBLE_DEVICES= --entrypoint /opt/tensorfold/bin/tensorfold-native "$TAG" capabilities --json)
+    "${caps[@]}" > "$W/capabilities.json" 2> "$W/capabilities.err" || die "$TAG: capabilities --json failed ($W/capabilities.err)"
+    python3 -I scripts/check_vision_libs.py "$W/capabilities.json" || die "$TAG: --vision libraries ($W/capabilities.json)"
+  fi
   log "image: $TAG $(docker image inspect -f '{{.Id}}' "$TAG") (engine tree $TREE)"
 }
 
