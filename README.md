@@ -6,7 +6,7 @@ Support me here: https://buymeacoffee.com/jayleaton
 
 **This repo is the recipe (profiles, patches, build script and docs), not the engine.** The engine is
 [TensorFold](https://github.com/ashhart/TensorFold), written in Zig: the pinned, unmodified submodule
-`vendor/TensorFold` plus the 83 patches in [`patches/`](patches), applied when you build the image. The Python files
+`vendor/TensorFold` plus the 84 patches in [`patches/`](patches), applied when you build the image. The Python files
 here are only this repo's own checks.
 
 The profiles serve Qwen3.8-Flash-Next, the released preview of the Qwen4 architecture, with the engine's compute lane
@@ -17,7 +17,7 @@ calls on that runner. The Qwen4 profiles are placeholders: no Qwen4 checkpoint h
 
 | You have | Profile | Patches | Checkpoint |
 | --- | --- | --- | --- |
-| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0083) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
+| **one Spark** | **TP1**: [qwen38-flash-next-tp1-tool-full](profiles/provisional/qwen38-flash-next-tp1-tool-full.env.example) | `patches/series.tp1` (0001-0084) | `TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP`, MLX 4-bit, 65,536 context |
 | **two linked Sparks** | **TP2**: [qwen38-flash-next-tp2-mia-tool-full](profiles/provisional/qwen38-flash-next-tp2-mia-tool-full.env.example) | `patches/series.tp2` (0001-0080) | `nvidia/Qwen3.8-Flash-Next-NVFP4`, NVFP4, 1,048,576 context |
 
 Then follow the steps below: [build the image](#2-build-the-image), [serve on one Spark](#3-serve-on-one-spark-tp1)
@@ -35,7 +35,7 @@ in `CHECKPOINT` (`repo@revision`).
 | --- | --- |
 | Upstream | [`ashhart/TensorFold`](https://github.com/ashhart/TensorFold) at `aaac299d1d90c2625e54cb50f3f0d1494c1c33ea` (the `vendor/TensorFold` submodule, `config/tensorfold.rev`), unmodified |
 | `patches/0001`-`0080` | the TP2 engine: Mia's dual-Spark Flash-Next engine as `flashnext_mia` (0002-0012: her own commits, authored MiaAI-Lab), then the compute lane, the in-model runner and its frontend, the call gates, `tool_choice`, the thinking-budget fixes, lane cost keeping and the runner's digit stop (0001-0076); then, for this base, three lean commits and one settings fix (0077-0080, below) |
-| `patches/0081`-`0083` | three runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, and the quoted rule (no engine value inside an open quotation) |
+| `patches/0081`-`0084` | four runner commits on top, for TP1: the digit hold after a stop, no word glued to the ` @engine` mark, the quoted rule (no engine value inside an open quotation), and the reply's runner receipt (`tensorfold.runner`) listing the digit stops that fired (`stops`) |
 | `patches/series.tp1`, `series.tp2` | which patches each profile applies, in order, and the tree sha the result must have |
 
 The patches are a `git format-patch` series; each keeps its original author. `scripts/build.sh` applies them with
@@ -293,6 +293,7 @@ at 8 and 16 streams than the port without them. On `4c4e966eb` the profile decod
 | 2026-11-13 | `187e28a03` (the tree `patches/series.tp1` makes on `aaac299d1`, recipe `f0002f9`) | release gates rerun on the image `scripts/build.sh tp1` builds, every reply the same as `b62876185`'s: computation-heavy subset 95/120 at 900 tokens a task (all 120 token counts equal); long-integer reasoning set 9/9 with 0 digit runaways (all 9 token-identical) |
 | 2026-11-13 | `187e28a03` | lane categories 179/180 and check subset 68/72, all 252 replies byte-identical to `b62876185`'s; thinking-off set 18/20, all 20 identical; thinking-budget probe 12/12; `tool_choice` required, named and any pass; opencode agent turns pass (the agent-client task 8/8) |
 | 2026-11-13 | `187e28a03` | boot smoke, the image built with `scripts/build.sh tp1` and served with section 3's line: ready 181 s; section 5's curl answers 30584; thinking on, off, streamed and a client tool call pass; a computation prompt ran code in the lane (2 calls) and ended with its answer; `tool_choice` required, named and any pass; the CUDA 13.3 compat driver is on |
+| 2026-11-14 | tree `8fcd7157e99d` (`patches/series.tp1` with 0084, on `aaac299d1`) | boot of the image `scripts/build.sh tp1` builds: ready 181 s; 3 seeded replays of an opencode request each token-identical to the `187e28a03` image's; the two whose reasoning hit the 1,024-digit run cap list `"stops":{"after_value":0,"after_mark":0,"run_cap":1}` in `tensorfold.runner`, the third lists no `stops` |
 
 Decode on `c8e930375`: 48.8 / 47.8 / 53.8 tokens/s at 841 / 6k / 24k-token prompts, 85.1 with 4 at once. With the
 compat driver: 53.6 / 49.5 / 55.3, 93.6 with 4 at once. Single cells move several percent between boots.

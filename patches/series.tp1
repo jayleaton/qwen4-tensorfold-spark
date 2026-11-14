@@ -1,7 +1,8 @@
-# TP1 engine: upstream TensorFold aaac299d1d90c2625e54cb50f3f0d1494c1c33ea plus every patch, 0001-0083 (git am, in this order): the TP2 set and the
-# three runner commits of the measured TP1 engine (b62876185195). The result's tree is the rebased line's head (187e28a03).
+# TP1 engine: upstream TensorFold aaac299d1d90c2625e54cb50f3f0d1494c1c33ea plus every patch, 0001-0084 (git am, in this order): the TP2 set,
+# the three runner commits of the measured TP1 engine (b62876185195), and 0084 (the runner receipt lists the digit stops
+# that fired). Up to 0083 the tree is the rebased line's head (187e28a03); 0084 adds a receipt field only.
 base aaac299d1d90c2625e54cb50f3f0d1494c1c33ea
-tree ce0da63db420e3e20fbf13e5bef1ead3c2f20010
+tree 8fcd7157e99d7f37688233e83a604fac38735336
 0001-notices-MiaAI-Lab-s-dual-Spark-recipe-license-notice.patch
 0002-flashnext_mia-build-module-kernel-images-and-the-TF_.patch
 0003-flashnext_mia-CUDA-kernels-for-MiaAI-Lab-s-Flash-Nex.patch
@@ -85,3 +86,4 @@ tree ce0da63db420e3e20fbf13e5bef1ead3c2f20010
 0081-runner-once-a-digit-stop-fired-in-a-reply-hold-its-l.patch
 0082-runner-no-drawn-word-character-glued-to-an-owned-spa.patch
 0083-runner-an-inline-span-inside-an-open-quotation-is-qu.patch
+0084-runner-the-reply-s-receipt-lists-the-digit-stops-tha.patch
